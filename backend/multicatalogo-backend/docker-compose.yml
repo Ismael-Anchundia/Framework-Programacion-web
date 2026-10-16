@@ -1,0 +1,35 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: multicatalogo-postgres
+    environment:
+      POSTGRES_USER: multicatalogo
+      POSTGRES_PASSWORD: multicatalogo123
+      POSTGRES_DB: multicatalogo
+    ports:
+      - "5434:5432"  # Puerto 5434 para evitar conflicto con postgres.exe local (5432) y postgres-funcional (5433)
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U multicatalogo"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:alpine
+    container_name: multicatalogo-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
+  redis_data:

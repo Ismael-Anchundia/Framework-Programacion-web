@@ -1,0 +1,28 @@
+# Binarios compilados
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+multicatalogo-backend
+
+# Archivos de prueba
+*.test
+*.out
+
+# Dependencias
+vendor/
+
+# Configuración local
+.env
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Sistema operativo
+.DS_Store
+Thumbs.db
