@@ -11,14 +11,15 @@ import (
 
 // Claims representa los claims del JWT
 type Claims struct {
-	Email string `json:"email"`
-	Rol   string `json:"rol"`
-	Sub   int    `json:"sub"` // ID del usuario
+	Email      string `json:"email"`
+	Rol        string `json:"rol"`
+	Sub        int    `json:"sub"` // ID del usuario
+	ReferidoID *int   `json:"referido_id,omitempty"`
 	jwt.RegisteredClaims
 }
 
 // GenerateToken genera un token JWT para un usuario
-func GenerateToken(userID int, email, rol string) (string, error) {
+func GenerateToken(userID int, email, rol string, referidoID *int) (string, error) {
 	// Obtener JWT_SECRET del entorno
 	secret := os.Getenv("JWT_SECRET")
 	if secret == "" {
@@ -33,9 +34,10 @@ func GenerateToken(userID int, email, rol string) (string, error) {
 
 	expirationTime := time.Now().Add(time.Hour * 2)
 	claims := &Claims{
-		Email: email,
-		Rol:   rol,
-		Sub:   userID,
+		Email:      email,
+		Rol:        rol,
+		Sub:        userID,
+		ReferidoID: referidoID,
 		RegisteredClaims: jwt.RegisteredClaims{
 			ExpiresAt: jwt.NewNumericDate(expirationTime),
 			IssuedAt:  jwt.NewNumericDate(time.Now()),

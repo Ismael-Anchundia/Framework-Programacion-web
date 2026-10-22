@@ -98,22 +98,19 @@ func (cc *CheckoutController) ProcesarCheckout(c *fiber.Ctx) error {
 		}))
 	}
 
-	// Si el pedido se creó exitosamente, lanzar Goroutine para calcular comisiones
-	// Esto no bloquea la respuesta al cliente
-	go func() {
-		log.Printf("Iniciando cálculo de comisiones para usuario %d...", userID.(int))
-		err := cc.repo.ActualizarComisiones(total, userID.(int))
-		if err != nil {
-			log.Printf("Error al calcular comisiones: %v", err)
-		} else {
-			log.Printf("Comisiones calculadas exitosamente para usuario %d", userID.(int))
+	// Crear comisiones en el ledger (síncrono para garantizar consistencia)
+	err = cc.repo.CrearComisiones(pedidoDB.ID, userID.(int), total)
+	if err != nil {
+		log.Printf("Error al crear comisiones: %v", err)
+		// No retornamos error porque el pedido ya se creó
+	}
 
-			// Invalidar caché de la red del usuario
-			cacheKey := "red:tree:" + email.(string)
-			err = cc.cache.Delete(cacheKey)
-			if err != nil {
-				log.Printf("Error al invalidar caché: %v", err)
-			}
+	// Invalidar caché de la red del usuario
+	cacheKey := "red:tree:" + email.(string)
+	go func() {
+		err = cc.cache.Delete(cacheKey)
+		if err != nil {
+			log.Printf("Error al invalidar caché: %v", err)
 		}
 	}()
 

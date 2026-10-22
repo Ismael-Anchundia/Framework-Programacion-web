@@ -7,6 +7,10 @@ CREATE TABLE IF NOT EXISTS usuarios (
     email VARCHAR(255) UNIQUE NOT NULL,
     password VARCHAR(255) NOT NULL,
     rol VARCHAR(50) NOT NULL CHECK (rol IN ('admin', 'cliente')),
+    nombre VARCHAR(255),
+    activo BOOLEAN DEFAULT true,
+    referido_id INTEGER REFERENCES referidos(id),
+    creado_en TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -20,6 +24,7 @@ CREATE TABLE IF NOT EXISTS productos (
     img VARCHAR(500),
     galeria TEXT[], -- Array de URLs de imágenes
     stock INTEGER DEFAULT 100, -- Stock disponible
+    activo BOOLEAN DEFAULT true, -- Borrado lógico
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -30,6 +35,7 @@ CREATE TABLE IF NOT EXISTS referidos (
     nivel INTEGER NOT NULL CHECK (nivel >= 0),
     ventas DECIMAL(10, 2) DEFAULT 0,
     parent_id INTEGER REFERENCES referidos(id) ON DELETE SET NULL,
+    codigo VARCHAR(20) UNIQUE, -- Código de invitación
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -58,10 +64,42 @@ CREATE TABLE IF NOT EXISTS pedido_items (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- Tabla de comisiones (ledger de comisiones)
+CREATE TABLE IF NOT EXISTS comisiones (
+    id SERIAL PRIMARY KEY,
+    pedido_id INTEGER REFERENCES pedidos(id) ON DELETE CASCADE,
+    referido_id INTEGER REFERENCES referidos(id) ON DELETE CASCADE,
+    nivel INTEGER NOT NULL CHECK (nivel >= 1 AND nivel <= 3),
+    porcentaje DECIMAL(5, 2) NOT NULL,
+    monto DECIMAL(10, 2) NOT NULL,
+    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'aprobada', 'pagada', 'revertida')),
+    liquidacion_id INTEGER REFERENCES liquidaciones(id) ON DELETE SET NULL,
+    creado_en TIMESTAMP DEFAULT NOW()
+);
+
+-- Índices para comisiones
+CREATE INDEX IF NOT EXISTS idx_comisiones_referido_pedido ON comisiones(referido_id, pedido_id);
+CREATE INDEX IF NOT EXISTS idx_comisiones_pedido ON comisiones(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
+
+-- Tabla de liquidaciones
+CREATE TABLE IF NOT EXISTS liquidaciones (
+    id SERIAL PRIMARY KEY,
+    referido_id INTEGER REFERENCES referidos(id) ON DELETE CASCADE,
+    total DECIMAL(10, 2) NOT NULL,
+    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'procesando', 'pagada')),
+    creado_en TIMESTAMP DEFAULT NOW(),
+    pagada_en TIMESTAMP
+);
+
+-- Índices para liquidaciones
+CREATE INDEX IF NOT EXISTS idx_liquidaciones_referido ON liquidaciones(referido_id);
+CREATE INDEX IF NOT EXISTS idx_liquidaciones_estado ON liquidaciones(estado);
+
 -- Insertar usuarios iniciales
-INSERT INTO usuarios (email, password, rol) VALUES
-    ('admin@upse.edu.ec', '123456', 'admin'),
-    ('cliente@upse.edu.ec', '123456', 'cliente')
+INSERT INTO usuarios (email, password, rol, nombre, referido_id) VALUES
+    ('admin@upse.edu.ec', '123456', 'admin', 'Administrador', 0),
+    ('cliente@upse.edu.ec', '123456', 'cliente', 'Cliente Demo', 2)
 ON CONFLICT (email) DO NOTHING;
 
 -- Insertar productos iniciales (basados en el frontend)
@@ -78,12 +116,12 @@ ON CONFLICT (id) DO NOTHING;
 
 -- Insertar referidos iniciales (estructura jerárquica aplanada con parent_id)
 -- Basado en la estructura del frontend red.ts
-INSERT INTO referidos (id, nombre, nivel, ventas, parent_id) VALUES
-    (1, 'Ana García', 1, 1200.00, NULL),
-    (2, 'Luis Poveda', 1, 850.00, NULL),
-    (3, 'Marta Sánchez', 1, 430.00, NULL),
-    (4, 'Carlos Ruiz', 2, 500.00, 1),
-    (5, 'Sofía León', 2, 430.00, 1),
-    (6, 'Marco Díaz', 2, 380.00, 2),
-    (7, 'Diana Paz', 3, 300.00, 4)
+INSERT INTO referidos (id, nombre, nivel, ventas, parent_id, codigo) VALUES
+    (1, 'Ana García', 1, 1200.00, NULL, 'ANA'),
+    (2, 'Luis Poveda', 1, 850.00, NULL, 'LUIS'),
+    (3, 'Marta Sánchez', 1, 430.00, NULL, 'MARTA'),
+    (4, 'Carlos Ruiz', 2, 500.00, 1, 'CARLOS'),
+    (5, 'Sofía León', 2, 430.00, 1, 'SOFIA'),
+    (6, 'Marco Díaz', 2, 380.00, 2, 'MARCO'),
+    (7, 'Diana Paz', 3, 300.00, 4, 'DIANA')
 ON CONFLICT (id) DO NOTHING;

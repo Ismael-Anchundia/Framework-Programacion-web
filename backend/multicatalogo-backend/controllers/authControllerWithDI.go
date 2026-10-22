@@ -53,6 +53,12 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 	// Buscar usuario en el repositorio (verifica password con bcrypt)
 	usuario, err := ac.repo.BuscarUsuarioPorCredenciales(req.Email, req.Password)
 	if err != nil {
+		if err.Error() == "cuenta desactivada" {
+			return c.Status(403).JSON(middleware.SanitizeError(models.APIError{
+				Status:  403,
+				Message: "Cuenta desactivada",
+			}))
+		}
 		return c.Status(500).JSON(middleware.SanitizeError(models.APIError{
 			Status:  500,
 			Message: "Error al buscar usuario",
@@ -68,7 +74,7 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 	}
 
 	// Generar token JWT real
-	token, err := auth.GenerateToken(usuario.ID, usuario.Email, usuario.Rol)
+	token, err := auth.GenerateToken(usuario.ID, usuario.Email, usuario.Rol, usuario.ReferidoID)
 	if err != nil {
 		return c.Status(500).JSON(middleware.SanitizeError(models.APIError{
 			Status:  500,
@@ -79,8 +85,9 @@ func (ac *AuthController) Login(c *fiber.Ctx) error {
 
 	// Retornar respuesta con email, rol y token JWT real
 	return c.JSON(fiber.Map{
-		"token": token,
-		"email": usuario.Email,
-		"rol":   usuario.Rol,
+		"token":       token,
+		"email":       usuario.Email,
+		"rol":         usuario.Rol,
+		"referido_id": usuario.ReferidoID,
 	})
 }

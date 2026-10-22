@@ -10,17 +10,46 @@ type DBRepository interface {
 	// Operaciones de usuarios
 	BuscarUsuarioPorCredenciales(email, password string) (*UsuarioDB, error)
 	ObtenerUsuarioPorEmail(email string) (*UsuarioDB, error)
+	CrearUsuario(usuario *UsuarioDB, referidoID *int) error
+	ObtenerUsuarios() ([]UsuarioDB, error)
+	ActualizarUsuarioEstado(usuarioID int, activo bool) error
 
 	// Operaciones de productos
 	ObtenerProductos() ([]models.Producto, error)
 	ObtenerProductoPorID(id int) (*models.Producto, error)
+	CrearProducto(producto *models.Producto) error
+	ActualizarProducto(id int, producto *models.Producto) error
+	DesactivarProducto(id int) error
+	ObtenerProductosAdmin() ([]models.Producto, error)
 
 	// Operaciones de red multinivel
 	ObtenerRed(email string) (*ReferidoDB, error)
+	ObtenerRedPorReferidoID(referidoID int) (*ReferidoDB, error)
+	ObtenerReferidoPorCodigo(codigo string) (*ReferidoDB, error)
 
 	// Operaciones de pedidos (transacciones ACID)
 	CrearPedido(pedido *PedidoDB, items []PedidoItemDB) error
-	ActualizarComisiones(total float64, usuarioID int) error
+	ObtenerPedidosMios(usuarioID int, page, limit int) ([]PedidoDB, int, error)
+	ObtenerPedidosTodos(page, limit int, estado string) ([]PedidoDB, int, error)
+	ObtenerPedidoPorID(id int) (*PedidoDB, error)
+	ActualizarEstadoPedido(id int, estado string) error
+	CancelarPedido(id int) error
+
+	// Operaciones de comisiones
+	CrearComisiones(pedidoID int, usuarioID int, total float64) error
+	ObtenerComisionesMias(referidoID int) ([]ComisionDB, error)
+	ObtenerComisionesPendientes() ([]ComisionDB, error)
+	ActualizarComisiones(total float64, usuarioID int) error // Método legacy para compatibilidad
+
+	// Operaciones de liquidaciones
+	CrearLiquidacion(referidoID int, total float64) error
+	ObtenerLiquidacionesMias(referidoID int) ([]LiquidacionDB, error)
+	ObtenerLiquidacionesTodas() ([]LiquidacionDB, error)
+
+	// Operaciones de reportes
+	ObtenerReporteResumen(desde, hasta string) (map[string]interface{}, error)
+	ObtenerTopProductos(limit int) ([]map[string]interface{}, error)
+	ObtenerTopReferidos(limit int) ([]map[string]interface{}, error)
 }
 
 // CacheRepository define la interfaz para operaciones de caché
@@ -32,10 +61,14 @@ type CacheRepository interface {
 
 // UsuarioDB representa un usuario en la base de datos
 type UsuarioDB struct {
-	ID       int    `json:"id"`
-	Email    string `json:"email"`
-	Password string `json:"password"`
-	Rol      string `json:"rol"`
+	ID         int    `json:"id"`
+	Email      string `json:"email"`
+	Password   string `json:"password"`
+	Rol        string `json:"rol"`
+	Nombre     string `json:"nombre"`
+	Activo     bool   `json:"activo"`
+	ReferidoID *int   `json:"referido_id,omitempty"`
+	CreadoEn   string `json:"creado_en,omitempty"`
 }
 
 // ReferidoDB representa un referido en la red multinivel
@@ -45,6 +78,7 @@ type ReferidoDB struct {
 	Nivel    int          `json:"nivel"`
 	Ventas   float64      `json:"ventas"`
 	ParentID *int         `json:"parent_id,omitempty"`
+	Codigo   string       `json:"codigo,omitempty"`
 	Hijos    []ReferidoDB `json:"hijos,omitempty"`
 }
 
@@ -59,14 +93,38 @@ type PedidoDB struct {
 	Ciudad      string  `json:"ciudad"`
 	Provincia   string  `json:"provincia"`
 	CodigoPostal string `json:"codigo_postal"`
+	CreadoEn    string  `json:"creado_en,omitempty"`
 }
 
 // PedidoItemDB representa un ítem de pedido en la base de datos
 type PedidoItemDB struct {
-	ID        int     `json:"id"`
-	PedidoID  int     `json:"pedido_id"`
-	ProductoID int    `json:"producto_id"`
-	Cantidad  int     `json:"cantidad"`
-	Precio    float64 `json:"precio"`
-	Subtotal  float64 `json:"subtotal"`
+	ID         int     `json:"id"`
+	PedidoID   int     `json:"pedido_id"`
+	ProductoID int     `json:"producto_id"`
+	Cantidad   int     `json:"cantidad"`
+	Precio     float64 `json:"precio"`
+	Subtotal   float64 `json:"subtotal"`
+}
+
+// ComisionDB representa una comisión en el ledger
+type ComisionDB struct {
+	ID            int     `json:"id"`
+	PedidoID      int     `json:"pedido_id"`
+	ReferidoID    int     `json:"referido_id"`
+	Nivel         int     `json:"nivel"`
+	Porcentaje    float64 `json:"porcentaje"`
+	Monto         float64 `json:"monto"`
+	Estado        string  `json:"estado"`
+	LiquidacionID *int    `json:"liquidacion_id,omitempty"`
+	CreadoEn      string  `json:"creado_en,omitempty"`
+}
+
+// LiquidacionDB representa una liquidación
+type LiquidacionDB struct {
+	ID         int     `json:"id"`
+	ReferidoID int     `json:"referido_id"`
+	Total      float64 `json:"total"`
+	Estado     string  `json:"estado"`
+	CreadoEn   string  `json:"creado_en,omitempty"`
+	PagadaEn   string  `json:"pagada_en,omitempty"`
 }

@@ -46,6 +46,9 @@ func main() {
 	prodController := controllers.NewProdController(dbRepo)
 	redController := controllers.NewRedController(dbRepo)
 	checkoutController := controllers.NewCheckoutController(dbRepo, redisCache)
+	registerController := controllers.NewRegisterController(dbRepo)
+	adminProductosController := controllers.NewAdminProductosController(dbRepo)
+	pedidosController := controllers.NewPedidosController(dbRepo)
 
 	// Instanciamos una nueva aplicación de Fiber y la guardamos en la variable 'app'.
 	app := fiber.New()
@@ -59,7 +62,7 @@ func main() {
 	}))
 
 	// Llamamos a la función SetupRoutes de nuestro paquete 'routes', enviándole la instancia de nuestra 'app' y los controladores.
-	routes.SetupRoutes(app, authController, prodController, redController, checkoutController)
+	routes.SetupRoutes(app, authController, prodController, redController, checkoutController, registerController, adminProductosController, pedidosController)
 
 	// Configuramos graceful shutdown
 	c := make(chan os.Signal, 1)

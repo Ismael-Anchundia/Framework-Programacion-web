@@ -25,6 +25,10 @@ type Producto struct {
 	Img         string   `json:"img"`
 	// Galería es un array de URLs de imágenes adicionales.
 	Galeria     []string `json:"galeria,omitempty"`
+	// Stock es la cantidad disponible del producto.
+	Stock       int      `json:"stock"`
+	// Activo indica si el producto está activo (borrado lógico).
+	Activo      bool     `json:"activo"`
 }
 
 // APIError estandariza los mensajes de error HTTP con una estructura consistente.
