@@ -1,6 +1,6 @@
 // src/components/Login.tsx
 import { useState, type FormEvent } from "react";
-import { useNavigate } from "react-router-dom";
+import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, type Rol } from "../context/AuthContext";
 
 const Login = () => {
@@ -10,6 +10,7 @@ const Login = () => {
   const [loading, setLoading] = useState<boolean>(false);
 
   const navigate = useNavigate();
+  const location = useLocation();
   const { login } = useAuth();
 
   const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
@@ -30,7 +31,7 @@ const Login = () => {
         setError("");
         // La API devuelve el rol (admin | cliente) junto al correo (Tema 5)
         const rol: Rol = data.rol === "admin" ? "admin" : "cliente";
-        login({ email: data.email, rol });
+        login({ email: data.email, rol, referido_id: data.referido_id }, data.token);
 
         // Redirigimos según el rol: admin al Dashboard, cliente a la Tienda
         navigate(rol === "admin" ? "/" : "/tienda");
@@ -52,6 +53,8 @@ const Login = () => {
             Ingresa a tu cuenta para continuar
           </p>
         </div>
+
+        {(location.state as { message?: string } | null)?.message && <p role="status" className="mb-5 rounded-lg bg-green-50 p-3 text-sm text-green-700">{(location.state as { message?: string }).message}</p>}
 
         {error && (
           <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm mb-6 text-center border border-red-200">
@@ -96,6 +99,8 @@ const Login = () => {
             {loading ? "Validando..." : "Iniciar Sesión"}
           </button>
         </form>
+
+        <p className="mt-5 text-center text-sm text-slate-600">¿Aún no tienes cuenta? <Link to="/registro" className="font-semibold text-indigo-600">Crear cuenta</Link></p>
 
         <div className="mt-6 p-4 bg-slate-50 rounded-lg border border-slate-200 text-xs text-slate-600 space-y-1">
           <p className="font-semibold text-slate-700">Cuentas de prueba:</p>

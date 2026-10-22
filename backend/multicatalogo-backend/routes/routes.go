@@ -11,7 +11,7 @@ import (
 )
 
 // SetupRoutes es una función que recibe un puntero a la aplicación Fiber (*fiber.App) y los controladores para inyectar las rutas.
-func SetupRoutes(app *fiber.App, authController *controllers.AuthController, prodController *controllers.ProdController, redController *controllers.RedController, checkoutController *controllers.CheckoutController, registerController *controllers.RegisterController, adminProductosController *controllers.AdminProductosController, pedidosController *controllers.PedidosController) {
+func SetupRoutes(app *fiber.App, authController *controllers.AuthController, prodController *controllers.ProdController, redController *controllers.RedController, checkoutController *controllers.CheckoutController, registerController *controllers.RegisterController, adminProductosController *controllers.AdminProductosController, pedidosController *controllers.PedidosController, comisionesController *controllers.ComisionesController, liquidacionesController *controllers.LiquidacionesController, reportesController *controllers.ReportesController, usuariosController *controllers.UsuariosController) {
 	// Definimos una ruta HTTP GET en "/api/health" para verificar el estado del servidor.
 	app.Get("/api/health", controllers.Health)
 
@@ -20,6 +20,8 @@ func SetupRoutes(app *fiber.App, authController *controllers.AuthController, pro
 
 	// Definimos una ruta HTTP POST en "/api/register" (pública)
 	app.Post("/api/register", registerController.Register)
+	app.Get("/api/admin/usuarios", middleware.RequireAuth, middleware.RequireAdmin, usuariosController.Listar)
+	app.Patch("/api/admin/usuarios/:id", middleware.RequireAuth, middleware.RequireAdmin, usuariosController.Actualizar)
 
 	// Definimos una ruta HTTP GET en "/api/productos" y la enlazamos al controlador con DI.
 	app.Get("/api/productos", prodController.GetProductos)
@@ -39,6 +41,21 @@ func SetupRoutes(app *fiber.App, authController *controllers.AuthController, pro
 	app.Get("/api/pedidos/:id", middleware.RequireAuth, pedidosController.ObtenerPedidoPorID)
 	app.Patch("/api/pedidos/:id/estado", middleware.RequireAuth, middleware.RequireAdmin, pedidosController.ActualizarEstadoPedido)
 	app.Post("/api/pedidos/:id/cancelar", middleware.RequireAuth, middleware.RequireAdmin, pedidosController.CancelarPedido)
+
+	// Comisiones
+	app.Get("/api/comisiones/mias", middleware.RequireAuth, comisionesController.ObtenerComisionesMias)
+	app.Get("/api/comisiones/pendientes", middleware.RequireAuth, middleware.RequireAdmin, comisionesController.ObtenerComisionesPendientes)
+
+	// Liquidaciones
+	app.Post("/api/liquidaciones", middleware.RequireAuth, middleware.RequireAdmin, liquidacionesController.CrearLiquidacion)
+	app.Get("/api/liquidaciones", middleware.RequireAuth, middleware.RequireAdmin, liquidacionesController.ObtenerLiquidacionesTodas)
+	app.Get("/api/liquidaciones/mias", middleware.RequireAuth, liquidacionesController.ObtenerLiquidacionesMias)
+
+	// Reportes
+	app.Get("/api/reportes/resumen", middleware.RequireAuth, middleware.RequireAdmin, reportesController.ObtenerReporteResumen)
+	app.Get("/api/reportes/top-productos", middleware.RequireAuth, middleware.RequireAdmin, reportesController.ObtenerTopProductos)
+	app.Get("/api/reportes/top-referidos", middleware.RequireAuth, middleware.RequireAdmin, reportesController.ObtenerTopReferidos)
+	app.Get("/api/reportes/comisiones-pendientes", middleware.RequireAuth, middleware.RequireAdmin, reportesController.ObtenerComisionesPendientes)
 
 	// Definimos una ruta HTTP GET en "/api/red" y la enlazamos al controlador con DI (protegido con RequireAuth)
 	app.Get("/api/red", middleware.RequireAuth, redController.GetRed)

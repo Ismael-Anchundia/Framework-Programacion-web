@@ -116,6 +116,9 @@ func (pc *PedidosController) ObtenerPedidoPorID(c *fiber.Ctx) error {
 			Message: "Pedido no encontrado",
 		}))
 	}
+	if c.Locals("rol") != "admin" && pedido.UsuarioID != c.Locals("user_id").(int) {
+		return c.Status(404).JSON(middleware.SanitizeError(models.APIError{Status: 404, Message: "Pedido no encontrado"}))
+	}
 
 	return c.JSON(pedido)
 }
@@ -149,6 +152,13 @@ func (pc *PedidosController) ActualizarEstadoPedido(c *fiber.Ctx) error {
 			Status:  400,
 			Message: "El estado es requerido",
 		}))
+	}
+	if req.Estado == "cancelado" {
+		err = pc.repo.CancelarPedido(id)
+		if err != nil {
+			return c.Status(400).JSON(middleware.SanitizeError(models.APIError{Status: 400, Message: err.Error()}))
+		}
+		return c.JSON(fiber.Map{"message": "Pedido cancelado y stock devuelto"})
 	}
 
 	err = pc.repo.ActualizarEstadoPedido(id, req.Estado)

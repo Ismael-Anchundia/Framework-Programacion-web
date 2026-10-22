@@ -32,7 +32,7 @@ type Referido struct {
 // BuscarUsuarioPorCredenciales busca un usuario por email y password
 func BuscarUsuarioPorCredenciales(email, password string) (*Usuario, error) {
 	query := `SELECT id, email, password, rol FROM usuarios WHERE email = $1 AND password = $2`
-	
+
 	var usuario Usuario
 	err := config.DB.QueryRow(query, email, password).Scan(
 		&usuario.ID,
@@ -40,21 +40,61 @@ func BuscarUsuarioPorCredenciales(email, password string) (*Usuario, error) {
 		&usuario.Password,
 		&usuario.Rol,
 	)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Usuario no encontrado
 		}
 		return nil, err
 	}
-	
+
 	return &usuario, nil
 }
 
-// ObtenerProductos retorna todos los productos del catálogo con caché en Redis
-func ObtenerProductos() ([]models.Producto, error) {
+// ObtenerProductos retorna todos los productos del catálogo con caché en Redis (con búsqueda opcional)
+func ObtenerProductos(busqueda string) ([]models.Producto, error) {
 	ctx := context.Background()
 	cacheKey := "productos:all"
+
+	// Si hay búsqueda, no usar caché y hacer búsqueda en BD
+	if busqueda != "" {
+		query := `
+			SELECT id, nombre, descripcion, precio, categoria, img, galeria
+			FROM productos
+			WHERE nombre ILIKE $1 OR descripcion ILIKE $1 OR categoria ILIKE $1
+			ORDER BY id
+		`
+
+		searchPattern := "%" + busqueda + "%"
+		rows, err := config.DB.Query(query, searchPattern)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var productos []models.Producto
+		for rows.Next() {
+			var p models.Producto
+			var galeria []string
+
+			err := rows.Scan(
+				&p.ID,
+				&p.Nombre,
+				&p.Descripcion,
+				&p.Precio,
+				&p.Categoria,
+				&p.Img,
+				&galeria,
+			)
+			if err != nil {
+				return nil, err
+			}
+
+			productos = append(productos, p)
+		}
+
+		return productos, nil
+	}
 
 	// Paso 1: Intentar leer desde Redis (Cache Hit)
 	if config.RedisClient != nil {
@@ -70,18 +110,18 @@ func ObtenerProductos() ([]models.Producto, error) {
 
 	// Paso 2: Cache Miss - Consultar PostgreSQL
 	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria FROM productos ORDER BY id`
-	
+
 	rows, err := config.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	var productos []models.Producto
 	for rows.Next() {
 		var p models.Producto
 		var galeria []string
-		
+
 		err := rows.Scan(
 			&p.ID,
 			&p.Nombre,
@@ -94,7 +134,7 @@ func ObtenerProductos() ([]models.Producto, error) {
 		if err != nil {
 			return nil, err
 		}
-		
+
 		productos = append(productos, p)
 	}
 
@@ -117,10 +157,10 @@ func ObtenerProductos() ([]models.Producto, error) {
 // ObtenerProductoPorID retorna un producto específico por su ID
 func ObtenerProductoPorID(id int) (*models.Producto, error) {
 	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria FROM productos WHERE id = $1`
-	
+
 	var p models.Producto
 	var galeria []string
-	
+
 	err := config.DB.QueryRow(query, id).Scan(
 		&p.ID,
 		&p.Nombre,
@@ -130,14 +170,14 @@ func ObtenerProductoPorID(id int) (*models.Producto, error) {
 		&p.Img,
 		&galeria,
 	)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Producto no encontrado
 		}
 		return nil, err
 	}
-	
+
 	return &p, nil
 }
 
@@ -160,21 +200,21 @@ func ObtenerRed(email string) (*Referido, error) {
 
 	// Paso 2: Cache Miss - Consultar PostgreSQL y construir el árbol
 	query := `SELECT id, nombre, nivel, ventas, parent_id FROM referidos ORDER BY id`
-	
+
 	rows, err := config.DB.Query(query)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	
+
 	// Mapa para almacenar todos los referidos por ID
 	referidosMap := make(map[int]*Referido)
 	var referidosList []*Referido
-	
+
 	for rows.Next() {
 		var r Referido
 		var parentID sql.NullInt64
-		
+
 		err := rows.Scan(
 			&r.ID,
 			&r.Nombre,
@@ -185,16 +225,16 @@ func ObtenerRed(email string) (*Referido, error) {
 		if err != nil {
 			return nil, err
 		}
-		
+
 		if parentID.Valid {
 			pid := int(parentID.Int64)
 			r.ParentID = &pid
 		}
-		
+
 		referidosMap[r.ID] = &r
 		referidosList = append(referidosList, &r)
 	}
-	
+
 	// Construimos el árbol jerárquico
 	// El usuario raíz (nivel 0) se crea virtualmente
 	raiz := &Referido{
@@ -203,7 +243,7 @@ func ObtenerRed(email string) (*Referido, error) {
 		Nivel:  0,
 		Ventas: 2400, // Ventas propias del usuario
 	}
-	
+
 	// Reconstruimos la jerarquía asignando hijos a sus padres
 	for _, ref := range referidosList {
 		if ref.ParentID != nil {
@@ -235,7 +275,7 @@ func ObtenerRed(email string) (*Referido, error) {
 // ObtenerUsuarioPorEmail busca un usuario por email (para validaciones)
 func ObtenerUsuarioPorEmail(email string) (*Usuario, error) {
 	query := `SELECT id, email, password, rol FROM usuarios WHERE email = $1`
-	
+
 	var usuario Usuario
 	err := config.DB.QueryRow(query, email).Scan(
 		&usuario.ID,
@@ -243,14 +283,14 @@ func ObtenerUsuarioPorEmail(email string) (*Usuario, error) {
 		&usuario.Password,
 		&usuario.Rol,
 	)
-	
+
 	if err != nil {
 		if err == sql.ErrNoRows {
 			return nil, nil // Usuario no encontrado
 		}
 		return nil, err
 	}
-	
+
 	return &usuario, nil
 }
 
@@ -260,12 +300,12 @@ func InicializarRepository() error {
 		log.Println("Advertencia: Conexión a base de datos no inicializada")
 		return nil
 	}
-	
+
 	// Verificar conexión
 	if err := config.DB.Ping(); err != nil {
 		return err
 	}
-	
+
 	log.Println("Repository inicializado correctamente")
 	return nil
 }

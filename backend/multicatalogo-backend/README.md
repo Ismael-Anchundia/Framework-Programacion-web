@@ -10,29 +10,21 @@ Backend para el sistema de catálogo multinivel construido con Go, Fiber, Postgr
 
 ## Configuración Inicial
 
-### 1. Ejecutar migración de seguridad
-
-Antes de iniciar los contenedores, ejecuta la migración para habilitar bcrypt y crear índices:
-
-```bash
-cd multicatalogo-backend
-# Asegúrate de que PostgreSQL no esté corriendo en el puerto 5434
-psql -h localhost -p 5434 -U multicatalogo -d multicatalogo -f database/003_seguridad.sql
-```
-
-### 2. Iniciar PostgreSQL y Redis con Docker
+### 1. Iniciar PostgreSQL y Redis con Docker
 
 ```bash
 cd multicatalogo-backend
 docker-compose up -d
 ```
 
+En una base nueva, Docker ejecuta en orden `init.sql`, `003_seguridad.sql` y `004_backoffice.sql`. Esto crea el esquema, activa bcrypt y prepara las tablas de back-office.
+
 Esto iniciará:
 - PostgreSQL 16 en el puerto 5434
 - Redis en el puerto 6379
 - Ejecutará automáticamente el script `database/init.sql` para crear las tablas y poblar los datos iniciales
 
-### 3. Verificar que los contenedores estén corriendo
+### 2. Verificar que los contenedores estén corriendo
 
 ```bash
 docker-compose ps
@@ -40,7 +32,7 @@ docker-compose ps
 
 Deberías ver los contenedores `multicatalogo-postgres` y `multicatalogo-redis` con estado `Up`.
 
-### 4. Compilar y ejecutar el servidor
+### 3. Compilar y ejecutar el servidor
 
 ```bash
 go run .
@@ -62,10 +54,22 @@ El servidor iniciará en `http://localhost:3000`
   - Cuerpo: `{"email": "string", "password": "string"}`
   - Respuesta exitosa: `{"token": "string", "email": "string", "rol": "admin|cliente"}`
   - **Seguridad**: Passwords hasheados con bcrypt, JWT con expiración de 2 horas
+- `POST /api/register` - Crear cuenta cliente; cuerpo `{nombre, email, password, ref?}`
 
 ### Productos (Públicos)
-- `GET /api/productos` - Obtener todos los productos (con caché Redis)
+- `GET /api/productos?q=&categoria=&page=&limit=` - Catálogo paginado y búsqueda/filtro server-side (con caché Redis para la lista sin filtros)
 - `GET /api/productos/:id` - Obtener un producto específico por ID
+
+### Back-office (protegido con JWT de administrador)
+- `GET /api/admin/productos?q=&page=&limit=`; `POST /api/admin/productos`; `PUT /api/admin/productos/:id`; `DELETE /api/admin/productos/:id`
+- `GET /api/admin/usuarios?page=&limit=`; `PATCH /api/admin/usuarios/:id` para rol y estado de la cuenta
+- `GET /api/pedidos?page=&limit=&estado=`; `PATCH /api/pedidos/:id/estado`; `POST /api/pedidos/:id/cancelar`
+- `GET /api/comisiones/pendientes`; `POST /api/liquidaciones`; `GET /api/liquidaciones`
+- `GET /api/reportes/resumen`; `GET /api/reportes/top-productos`; `GET /api/reportes/top-referidos`; `GET /api/reportes/comisiones-pendientes`
+
+### Cuenta de cliente (protegido con JWT)
+- `GET /api/pedidos/mios?page=&limit=`; `GET /api/pedidos/:id` (solo propietario o administrador)
+- `GET /api/red/mia`; `GET /api/comisiones/mias`; `GET /api/liquidaciones/mias`
 
 ### Red Multinivel (Protegido)
 - `GET /api/red` - Obtener la jerarquía de referidos del usuario (con caché Redis)
@@ -78,8 +82,8 @@ El servidor iniciará en `http://localhost:3000`
   - Cuerpo: `{"direccion": "string", "ciudad": "string", "provincia": "string", "codigo_postal": "string", "metodo_pago": "string", "items": [...]}`
   - Respuesta: `{"pedido_id": int, "total": float64, "estado": "string", "mensaje": "string"}`
   - **Seguridad**: Identidad del usuario obtenida del token JWT (no del body)
-  - Las comisiones se calculan de forma asíncrona con Goroutines
-  - El caché de la red se invalida automáticamente
+  - Los precios y el stock se vuelven a validar en PostgreSQL; pedido, stock y ledger de comisiones se guardan en una transacción
+  - El caché de productos y de la red se invalida al actualizar datos
 
 ### Sistema
 - `GET /api/health` - Verificar estado del servidor y dependencias
@@ -105,7 +109,8 @@ multicatalogo-backend/
 │   └── healthController.go          # Health check con ping a dependencias
 ├── database/
 │   ├── init.sql               # Script de inicialización de BD
-│   └── 003_seguridad.sql      # Migración de seguridad (bcrypt + índices)
+│   ├── 003_seguridad.sql      # Migración de seguridad (bcrypt + índices)
+│   └── 004_backoffice.sql     # Esquema de referidos, pedidos, comisiones y liquidaciones
 ├── interfaces/
 │   └── interfaces.go          # Interfaces para inyección de dependencias
 ├── middleware/
@@ -227,10 +232,11 @@ go get <paquete>
 go mod tidy
 ```
 
-### Ejecutar migraciones
+### Aplicar migraciones a una base ya existente
 
 ```bash
 psql -h localhost -p 5434 -U multicatalogo -d multicatalogo -f database/003_seguridad.sql
+psql -h localhost -p 5434 -U multicatalogo -d multicatalogo -f database/004_backoffice.sql
 ```
 
 ## Troubleshooting

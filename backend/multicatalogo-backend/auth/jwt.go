@@ -32,7 +32,11 @@ func GenerateToken(userID int, email, rol string, referidoID *int) (string, erro
 		expirationHours = "2" // 2 horas por defecto
 	}
 
-	expirationTime := time.Now().Add(time.Hour * 2)
+	hours, err := time.ParseDuration(expirationHours + "h")
+	if err != nil || hours <= 0 {
+		hours = 2 * time.Hour
+	}
+	expirationTime := time.Now().Add(hours)
 	claims := &Claims{
 		Email:      email,
 		Rol:        rol,

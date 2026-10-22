@@ -13,14 +13,18 @@ ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW();
 ALTER TABLE referidos
 ADD COLUMN IF NOT EXISTS codigo VARCHAR(20) UNIQUE;
 
--- Generar códigos para referidos existentes
-UPDATE referidos SET codigo = 'TU' WHERE id = 1;
-UPDATE referidos SET codigo = 'ANA' WHERE id = 2;
-UPDATE referidos SET codigo = 'LUIS' WHERE id = 3;
-UPDATE referidos SET codigo = 'MARTA' WHERE id = 4;
-UPDATE referidos SET codigo = 'CARLOS' WHERE id = 5;
-UPDATE referidos SET codigo = 'SOFIA' WHERE id = 6;
-UPDATE referidos SET codigo = 'MARCO' WHERE id = 7;
+-- Generar códigos para el seed sin pisar los ya existentes
+UPDATE referidos SET codigo = CASE id
+    WHEN 1 THEN 'ANA'
+    WHEN 2 THEN 'LUIS'
+    WHEN 3 THEN 'MARTA'
+    WHEN 4 THEN 'CARLOS'
+    WHEN 5 THEN 'SOFIA'
+    WHEN 6 THEN 'MARCO'
+    WHEN 7 THEN 'DIANA'
+    ELSE codigo
+END
+WHERE codigo IS NULL AND id BETWEEN 1 AND 7;
 
 -- ALTER productos: agregar activo para borrado lógico
 ALTER TABLE productos
@@ -29,25 +33,14 @@ ADD COLUMN IF NOT EXISTS activo BOOLEAN DEFAULT true;
 -- ALTER pedidos: agregar estado y usuario_id si no existen
 ALTER TABLE pedidos
 ADD COLUMN IF NOT EXISTS estado VARCHAR(50) DEFAULT 'pendiente',
-ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id);
+ADD COLUMN IF NOT EXISTS usuario_id INTEGER REFERENCES usuarios(id),
+ADD COLUMN IF NOT EXISTS creado_en TIMESTAMP DEFAULT NOW();
 
--- Crear tabla comisiones (ledger de comisiones)
-CREATE TABLE IF NOT EXISTS comisiones (
-    id SERIAL PRIMARY KEY,
-    pedido_id INTEGER REFERENCES pedidos(id) ON DELETE CASCADE,
-    referido_id INTEGER REFERENCES referidos(id) ON DELETE CASCADE,
-    nivel INTEGER NOT NULL CHECK (nivel >= 1 AND nivel <= 3),
-    porcentaje DECIMAL(5, 2) NOT NULL,
-    monto DECIMAL(10, 2) NOT NULL,
-    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'aprobada', 'pagada', 'revertida')),
-    liquidacion_id INTEGER REFERENCES liquidaciones(id) ON DELETE SET NULL,
-    creado_en TIMESTAMP DEFAULT NOW()
-);
-
--- Índices para comisiones
-CREATE INDEX IF NOT EXISTS idx_comisiones_referido_pedido ON comisiones(referido_id, pedido_id);
-CREATE INDEX IF NOT EXISTS idx_comisiones_pedido ON comisiones(pedido_id);
-CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
+UPDATE pedidos SET creado_en = created_at WHERE creado_en IS NULL;
+ALTER TABLE pedidos DROP CONSTRAINT IF EXISTS pedidos_estado_check;
+UPDATE pedidos SET estado = 'preparando' WHERE estado = 'procesando';
+UPDATE pedidos SET estado = 'entregado' WHERE estado = 'completado';
+ALTER TABLE pedidos ADD CONSTRAINT pedidos_estado_check CHECK (estado IN ('pendiente', 'preparando', 'enviado', 'entregado', 'cancelado'));
 
 -- Crear tabla liquidaciones
 CREATE TABLE IF NOT EXISTS liquidaciones (
@@ -63,9 +56,35 @@ CREATE TABLE IF NOT EXISTS liquidaciones (
 CREATE INDEX IF NOT EXISTS idx_liquidaciones_referido ON liquidaciones(referido_id);
 CREATE INDEX IF NOT EXISTS idx_liquidaciones_estado ON liquidaciones(estado);
 
+-- Crear tabla comisiones después de liquidaciones porque la referencia
+CREATE TABLE IF NOT EXISTS comisiones (
+    id SERIAL PRIMARY KEY,
+    pedido_id INTEGER REFERENCES pedidos(id) ON DELETE CASCADE,
+    referido_id INTEGER REFERENCES referidos(id) ON DELETE CASCADE,
+    nivel INTEGER NOT NULL CHECK (nivel >= 1 AND nivel <= 3),
+    porcentaje DECIMAL(5, 2) NOT NULL,
+    monto DECIMAL(10, 2) NOT NULL,
+    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'aprobada', 'pagada', 'revertida')),
+    liquidacion_id INTEGER REFERENCES liquidaciones(id) ON DELETE SET NULL,
+    creado_en TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comisiones_referido_pedido ON comisiones(referido_id, pedido_id);
+CREATE INDEX IF NOT EXISTS idx_comisiones_pedido ON comisiones(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
+
 -- Enlazar usuarios con referidos del seed
-UPDATE usuarios SET nombre = 'Administrador', referido_id = 0 WHERE email = 'admin@upse.edu.ec';
-UPDATE usuarios SET nombre = 'Cliente Demo', referido_id = 2 WHERE email = 'cliente@upse.edu.ec';
+UPDATE usuarios SET nombre = 'Administrador', referido_id = NULL WHERE email = 'admin@upse.edu.ec';
+-- Bases existentes pueden tener una secuencia atrasada respecto a los IDs cargados manualmente.
+SELECT setval(pg_get_serial_sequence('referidos', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM referidos), 1), 1), true);
+INSERT INTO referidos (nombre, nivel, ventas, parent_id, codigo)
+SELECT 'Cliente Demo', 2, 0, 2, 'CLIENTE'
+WHERE NOT EXISTS (SELECT 1 FROM referidos WHERE codigo = 'CLIENTE');
+UPDATE usuarios SET nombre = 'Cliente Demo', referido_id = (SELECT id FROM referidos WHERE codigo = 'CLIENTE')
+WHERE email = 'cliente@upse.edu.ec';
+
+SELECT setval(pg_get_serial_sequence('referidos', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM referidos), 1), 1), true);
+SELECT setval(pg_get_serial_sequence('usuarios', 'id'), GREATEST(COALESCE((SELECT MAX(id) FROM usuarios), 1), 1), true);
 
 -- Verificación
 SELECT 'usuarios' as tabla, column_name, data_type FROM information_schema.columns WHERE table_name = 'usuarios' ORDER BY ordinal_position;

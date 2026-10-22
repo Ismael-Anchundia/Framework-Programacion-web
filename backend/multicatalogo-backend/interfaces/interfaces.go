@@ -12,15 +12,19 @@ type DBRepository interface {
 	ObtenerUsuarioPorEmail(email string) (*UsuarioDB, error)
 	CrearUsuario(usuario *UsuarioDB, referidoID *int) error
 	ObtenerUsuarios() ([]UsuarioDB, error)
+	ObtenerUsuariosPaginados(page, limit int) ([]UsuarioDB, int, error)
 	ActualizarUsuarioEstado(usuarioID int, activo bool) error
+	ActualizarUsuario(usuarioID int, activo *bool, rol *string) error
 
 	// Operaciones de productos
-	ObtenerProductos() ([]models.Producto, error)
+	ObtenerProductos(busqueda string) ([]models.Producto, error)
+	ObtenerProductosPaginados(busqueda, categoria string, page, limit int) ([]models.Producto, int, error)
 	ObtenerProductoPorID(id int) (*models.Producto, error)
 	CrearProducto(producto *models.Producto) error
 	ActualizarProducto(id int, producto *models.Producto) error
 	DesactivarProducto(id int) error
-	ObtenerProductosAdmin() ([]models.Producto, error)
+	ObtenerProductosAdmin(busqueda string) ([]models.Producto, error)
+	ObtenerProductosAdminPaginados(busqueda string, page, limit int) ([]models.Producto, int, error)
 
 	// Operaciones de red multinivel
 	ObtenerRed(email string) (*ReferidoDB, error)
@@ -63,7 +67,7 @@ type CacheRepository interface {
 type UsuarioDB struct {
 	ID         int    `json:"id"`
 	Email      string `json:"email"`
-	Password   string `json:"password"`
+	Password   string `json:"-"`
 	Rol        string `json:"rol"`
 	Nombre     string `json:"nombre"`
 	Activo     bool   `json:"activo"`
@@ -84,16 +88,17 @@ type ReferidoDB struct {
 
 // PedidoDB representa un pedido en la base de datos
 type PedidoDB struct {
-	ID          int     `json:"id"`
-	UsuarioID   int     `json:"usuario_id"`
-	Total       float64 `json:"total"`
-	Estado      string  `json:"estado"`
-	Direccion   string  `json:"direccion"`
-	MetodoPago  string  `json:"metodo_pago"`
-	Ciudad      string  `json:"ciudad"`
-	Provincia   string  `json:"provincia"`
-	CodigoPostal string `json:"codigo_postal"`
-	CreadoEn    string  `json:"creado_en,omitempty"`
+	ID           int            `json:"id"`
+	UsuarioID    int            `json:"usuario_id"`
+	Total        float64        `json:"total"`
+	Estado       string         `json:"estado"`
+	Direccion    string         `json:"direccion"`
+	MetodoPago   string         `json:"metodo_pago"`
+	Ciudad       string         `json:"ciudad"`
+	Provincia    string         `json:"provincia"`
+	CodigoPostal string         `json:"codigo_postal"`
+	CreadoEn     string         `json:"creado_en,omitempty"`
+	Items        []PedidoItemDB `json:"items,omitempty"`
 }
 
 // PedidoItemDB representa un ítem de pedido en la base de datos
@@ -104,19 +109,21 @@ type PedidoItemDB struct {
 	Cantidad   int     `json:"cantidad"`
 	Precio     float64 `json:"precio"`
 	Subtotal   float64 `json:"subtotal"`
+	Nombre     string  `json:"nombre,omitempty"`
 }
 
 // ComisionDB representa una comisión en el ledger
 type ComisionDB struct {
-	ID            int     `json:"id"`
-	PedidoID      int     `json:"pedido_id"`
-	ReferidoID    int     `json:"referido_id"`
-	Nivel         int     `json:"nivel"`
-	Porcentaje    float64 `json:"porcentaje"`
-	Monto         float64 `json:"monto"`
-	Estado        string  `json:"estado"`
-	LiquidacionID *int    `json:"liquidacion_id,omitempty"`
-	CreadoEn      string  `json:"creado_en,omitempty"`
+	ID             int     `json:"id"`
+	PedidoID       int     `json:"pedido_id"`
+	ReferidoID     int     `json:"referido_id"`
+	Nivel          int     `json:"nivel"`
+	Porcentaje     float64 `json:"porcentaje"`
+	Monto          float64 `json:"monto"`
+	Estado         string  `json:"estado"`
+	LiquidacionID  *int    `json:"liquidacion_id,omitempty"`
+	CreadoEn       string  `json:"creado_en,omitempty"`
+	ReferidoNombre string  `json:"referido_nombre,omitempty"`
 }
 
 // LiquidacionDB representa una liquidación

@@ -11,6 +11,8 @@ import (
 	"multicatalogo-backend/domain"
 	"multicatalogo-backend/interfaces"
 	"multicatalogo-backend/models"
+	"sort"
+	"strings"
 	"time"
 
 	"golang.org/x/crypto/bcrypt"
@@ -86,10 +88,86 @@ func (r *PostgresRepository) ObtenerUsuarioPorEmail(email string) (*interfaces.U
 	return &usuario, nil
 }
 
-// ObtenerProductos retorna todos los productos del catálogo con caché en Redis
-func (r *PostgresRepository) ObtenerProductos() ([]models.Producto, error) {
+func (r *PostgresRepository) ObtenerUsuariosPaginados(page, limit int) ([]interfaces.UsuarioDB, int, error) {
+	page, limit = validarPagina(page, limit)
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM usuarios").Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.Query(`SELECT id, email, rol, COALESCE(nombre, ''), COALESCE(activo, true), referido_id, creado_en FROM usuarios ORDER BY id LIMIT $1 OFFSET $2`, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	usuarios := make([]interfaces.UsuarioDB, 0)
+	for rows.Next() {
+		var u interfaces.UsuarioDB
+		var referidoID sql.NullInt64
+		var creadoEn sql.NullTime
+		if err := rows.Scan(&u.ID, &u.Email, &u.Rol, &u.Nombre, &u.Activo, &referidoID, &creadoEn); err != nil {
+			return nil, 0, err
+		}
+		if referidoID.Valid {
+			id := int(referidoID.Int64)
+			u.ReferidoID = &id
+		}
+		if creadoEn.Valid {
+			u.CreadoEn = creadoEn.Time.Format("2006-01-02 15:04:05")
+		}
+		usuarios = append(usuarios, u)
+	}
+	return usuarios, total, rows.Err()
+}
+
+// ObtenerProductos retorna todos los productos del catálogo con caché en Redis (con búsqueda opcional)
+func (r *PostgresRepository) ObtenerProductos(busqueda string) ([]models.Producto, error) {
 	ctx := context.Background()
 	cacheKey := "productos:all"
+
+	// Si hay búsqueda, no usar caché y hacer búsqueda en BD
+	if busqueda != "" {
+		query := `
+			SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo
+			FROM productos
+			WHERE activo = true AND (nombre ILIKE $1 OR descripcion ILIKE $1 OR categoria ILIKE $1)
+			ORDER BY id
+		`
+
+		searchPattern := "%" + busqueda + "%"
+		rows, err := r.db.Query(query, searchPattern)
+		if err != nil {
+			return nil, err
+		}
+		defer rows.Close()
+
+		var productos []models.Producto
+		for rows.Next() {
+			var p models.Producto
+			var galeria []string
+			var activo bool
+
+			err := rows.Scan(
+				&p.ID,
+				&p.Nombre,
+				&p.Descripcion,
+				&p.Precio,
+				&p.Categoria,
+				&p.Img,
+				&galeria,
+				&p.Stock,
+				&activo,
+			)
+			if err != nil {
+				return nil, err
+			}
+			p.Galeria = galeria
+			p.Activo = activo
+
+			productos = append(productos, p)
+		}
+
+		return productos, nil
+	}
 
 	// Paso 1: Intentar leer desde Redis (Cache Hit)
 	if config.RedisClient != nil {
@@ -104,7 +182,7 @@ func (r *PostgresRepository) ObtenerProductos() ([]models.Producto, error) {
 	}
 
 	// Paso 2: Cache Miss - Consultar PostgreSQL
-	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria FROM productos ORDER BY id`
+	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo FROM productos WHERE activo = true ORDER BY id`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -116,6 +194,7 @@ func (r *PostgresRepository) ObtenerProductos() ([]models.Producto, error) {
 	for rows.Next() {
 		var p models.Producto
 		var galeria []string
+		var activo bool
 
 		err := rows.Scan(
 			&p.ID,
@@ -125,10 +204,14 @@ func (r *PostgresRepository) ObtenerProductos() ([]models.Producto, error) {
 			&p.Categoria,
 			&p.Img,
 			&galeria,
+			&p.Stock,
+			&activo,
 		)
 		if err != nil {
 			return nil, err
 		}
+		p.Galeria = galeria
+		p.Activo = activo
 
 		productos = append(productos, p)
 	}
@@ -149,12 +232,40 @@ func (r *PostgresRepository) ObtenerProductos() ([]models.Producto, error) {
 	return productos, nil
 }
 
+func (r *PostgresRepository) ObtenerProductosPaginados(busqueda, categoria string, page, limit int) ([]models.Producto, int, error) {
+	page, limit = validarPagina(page, limit)
+	busqueda = strings.TrimSpace(busqueda)
+	categoria = strings.TrimSpace(categoria)
+	if busqueda == "" && categoria == "" {
+		productos, err := r.ObtenerProductos("")
+		if err != nil {
+			return nil, 0, err
+		}
+		data, total := paginaSlice(productos, page, limit)
+		return data, total, nil
+	}
+	pattern := "%" + busqueda + "%"
+	where := "activo = true AND ($1 = '' OR nombre ILIKE $2 OR descripcion ILIKE $2 OR categoria ILIKE $2) AND ($3 = '' OR categoria = $3)"
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM productos WHERE "+where, busqueda, pattern, categoria).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.Query(`SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo FROM productos WHERE `+where+` ORDER BY id LIMIT $4 OFFSET $5`, busqueda, pattern, categoria, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	productos, err := scanProductos(rows)
+	return productos, total, err
+}
+
 // ObtenerProductoPorID retorna un producto específico por su ID
 func (r *PostgresRepository) ObtenerProductoPorID(id int) (*models.Producto, error) {
-	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria FROM productos WHERE id = $1`
+	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo FROM productos WHERE id = $1 AND activo = true`
 
 	var p models.Producto
 	var galeria []string
+	var activo bool
 
 	err := r.db.QueryRow(query, id).Scan(
 		&p.ID,
@@ -164,6 +275,8 @@ func (r *PostgresRepository) ObtenerProductoPorID(id int) (*models.Producto, err
 		&p.Categoria,
 		&p.Img,
 		&galeria,
+		&p.Stock,
+		&activo,
 	)
 
 	if err != nil {
@@ -172,6 +285,8 @@ func (r *PostgresRepository) ObtenerProductoPorID(id int) (*models.Producto, err
 		}
 		return nil, err
 	}
+	p.Galeria = galeria
+	p.Activo = activo
 
 	return &p, nil
 }
@@ -274,11 +389,45 @@ func (r *PostgresRepository) CrearPedido(pedido *interfaces.PedidoDB, items []in
 	}
 
 	// Función para rollback en caso de error
-	defer func() {
-		if err != nil {
-			tx.Rollback()
+	defer tx.Rollback()
+
+	// Reservar el stock y calcular precios desde la base de datos. Nunca se
+	// confía en los importes que envía el navegador.
+	required := make(map[int]int)
+	for i := range items {
+		if items[i].Cantidad < 1 {
+			return fmt.Errorf("la cantidad debe ser mayor que cero")
 		}
-	}()
+		required[items[i].ProductoID] += items[i].Cantidad
+	}
+	productIDs := make([]int, 0, len(required))
+	for id := range required {
+		productIDs = append(productIDs, id)
+	}
+	sort.Ints(productIDs)
+	prices := make(map[int]float64, len(required))
+	for _, productID := range productIDs {
+		var precio float64
+		err = tx.QueryRow(`
+			SELECT precio FROM productos
+			WHERE id = $1 AND activo = true AND stock >= $2
+			FOR UPDATE
+		`, productID, required[productID]).Scan(&precio)
+		if err != nil {
+			if err == sql.ErrNoRows {
+				return fmt.Errorf("producto %d no disponible o sin stock suficiente", productID)
+			}
+			return err
+		}
+		prices[productID] = precio
+	}
+	var total float64
+	for i := range items {
+		items[i].Precio = prices[items[i].ProductoID]
+		items[i].Subtotal = items[i].Precio * float64(items[i].Cantidad)
+		total += items[i].Subtotal
+	}
+	pedido.Total = total
 
 	// Insertar pedido principal
 	queryPedido := `
@@ -325,21 +474,24 @@ func (r *PostgresRepository) CrearPedido(pedido *interfaces.PedidoDB, items []in
 			return err
 		}
 
-		// Restar stock simulado (en un sistema real esto sería en la tabla productos)
-		_, err = tx.Exec(
-			"UPDATE productos SET stock = stock - $1 WHERE id = $2",
-			items[i].Cantidad,
-			items[i].ProductoID,
-		)
-		if err != nil {
+	}
+	for _, productID := range productIDs {
+		if _, err = tx.Exec("UPDATE productos SET stock = stock - $1 WHERE id = $2", required[productID], productID); err != nil {
 			return err
 		}
+	}
+
+	if err = crearComisionesTx(tx, pedido.ID, pedido.UsuarioID, pedido.Total); err != nil {
+		return err
 	}
 
 	// Commit de la transacción
 	err = tx.Commit()
 	if err != nil {
 		return err
+	}
+	if config.RedisClient != nil {
+		_ = config.RedisClient.Del(context.Background(), "productos:all").Err()
 	}
 
 	log.Printf("Pedido %d creado exitosamente con %d items", pedido.ID, len(items))
@@ -401,11 +553,7 @@ func (r *PostgresRepository) CrearUsuario(usuario *interfaces.UsuarioDB, referid
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
 	// Insertar usuario
 	queryUsuario := `
@@ -458,12 +606,15 @@ func (r *PostgresRepository) CrearUsuario(usuario *interfaces.UsuarioDB, referid
 		return err
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // ObtenerUsuarios retorna todos los usuarios (admin)
 func (r *PostgresRepository) ObtenerUsuarios() ([]interfaces.UsuarioDB, error) {
-	query := `SELECT id, email, rol, nombre, activo, referido_id, creado_en FROM usuarios ORDER BY id`
+	query := `SELECT id, email, rol, COALESCE(nombre, ''), COALESCE(activo, true), referido_id, creado_en FROM usuarios ORDER BY id`
 
 	rows, err := r.db.Query(query)
 	if err != nil {
@@ -509,6 +660,29 @@ func (r *PostgresRepository) ObtenerUsuarios() ([]interfaces.UsuarioDB, error) {
 func (r *PostgresRepository) ActualizarUsuarioEstado(usuarioID int, activo bool) error {
 	_, err := r.db.Exec("UPDATE usuarios SET activo = $1 WHERE id = $2", activo, usuarioID)
 	return err
+}
+
+func (r *PostgresRepository) ActualizarUsuario(usuarioID int, activo *bool, rol *string) error {
+	if rol != nil && *rol != "admin" && *rol != "cliente" {
+		return fmt.Errorf("rol inválido")
+	}
+	result, err := r.db.Exec(`
+		UPDATE usuarios SET
+			activo = COALESCE($1, activo),
+			rol = COALESCE($2, rol)
+		WHERE id = $3
+	`, activo, rol, usuarioID)
+	if err != nil {
+		return err
+	}
+	count, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if count == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // ObtenerRedPorReferidoID retorna la red desde un referido específico
@@ -680,8 +854,8 @@ func (r *PostgresRepository) CrearProducto(producto *models.Producto) error {
 func (r *PostgresRepository) ActualizarProducto(id int, producto *models.Producto) error {
 	query := `
 		UPDATE productos
-		SET nombre = $1, descripcion = $2, precio = $3, categoria = $4, img = $5, galeria = $6, stock = $7
-		WHERE id = $8
+		SET nombre = $1, descripcion = $2, precio = $3, categoria = $4, img = $5, galeria = $6, stock = $7, activo = $8
+		WHERE id = $9
 	`
 
 	var galeria []string
@@ -698,6 +872,7 @@ func (r *PostgresRepository) ActualizarProducto(id int, producto *models.Product
 		producto.Img,
 		galeria,
 		producto.Stock,
+		producto.Activo,
 		id,
 	)
 
@@ -733,10 +908,11 @@ func (r *PostgresRepository) DesactivarProducto(id int) error {
 }
 
 // ObtenerProductosAdmin retorna todos los productos incluyendo inactivos
-func (r *PostgresRepository) ObtenerProductosAdmin() ([]models.Producto, error) {
-	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo FROM productos ORDER BY id`
-
-	rows, err := r.db.Query(query)
+func (r *PostgresRepository) ObtenerProductosAdmin(busqueda string) ([]models.Producto, error) {
+	query := `SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo FROM productos
+		WHERE ($1 = '' OR nombre ILIKE $2 OR descripcion ILIKE $2 OR categoria ILIKE $2) ORDER BY id`
+	pattern := "%" + busqueda + "%"
+	rows, err := r.db.Query(query, busqueda, pattern)
 	if err != nil {
 		return nil, err
 	}
@@ -762,11 +938,74 @@ func (r *PostgresRepository) ObtenerProductosAdmin() ([]models.Producto, error) 
 		if err != nil {
 			return nil, err
 		}
+		p.Galeria = galeria
+		p.Activo = activo
 
 		productos = append(productos, p)
 	}
 
 	return productos, nil
+}
+
+func (r *PostgresRepository) ObtenerProductosAdminPaginados(busqueda string, page, limit int) ([]models.Producto, int, error) {
+	page, limit = validarPagina(page, limit)
+	busqueda = strings.TrimSpace(busqueda)
+	pattern := "%" + busqueda + "%"
+	where := "($1 = '' OR nombre ILIKE $2 OR descripcion ILIKE $2 OR categoria ILIKE $2)"
+	var total int
+	if err := r.db.QueryRow("SELECT COUNT(*) FROM productos WHERE "+where, busqueda, pattern).Scan(&total); err != nil {
+		return nil, 0, err
+	}
+	rows, err := r.db.Query(`SELECT id, nombre, descripcion, precio, categoria, img, galeria, stock, activo FROM productos WHERE `+where+` ORDER BY id LIMIT $3 OFFSET $4`, busqueda, pattern, limit, (page-1)*limit)
+	if err != nil {
+		return nil, 0, err
+	}
+	defer rows.Close()
+	productos, err := scanProductos(rows)
+	return productos, total, err
+}
+
+func paginaSlice[T any](items []T, page, limit int) ([]T, int) {
+	total := len(items)
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 {
+		limit = 10
+	}
+	start := (page - 1) * limit
+	if start >= total {
+		return []T{}, total
+	}
+	end := start + limit
+	if end > total {
+		end = total
+	}
+	return items[start:end], total
+}
+
+func validarPagina(page, limit int) (int, int) {
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+	return page, limit
+}
+
+func scanProductos(rows *sql.Rows) ([]models.Producto, error) {
+	productos := make([]models.Producto, 0)
+	for rows.Next() {
+		var p models.Producto
+		var galeria []string
+		if err := rows.Scan(&p.ID, &p.Nombre, &p.Descripcion, &p.Precio, &p.Categoria, &p.Img, &galeria, &p.Stock, &p.Activo); err != nil {
+			return nil, err
+		}
+		p.Galeria = galeria
+		productos = append(productos, p)
+	}
+	return productos, rows.Err()
 }
 
 // ObtenerPedidosMios retorna los pedidos del usuario autenticado (paginado)
@@ -934,6 +1173,26 @@ func (r *PostgresRepository) ObtenerPedidoPorID(id int) (*interfaces.PedidoDB, e
 		p.CreadoEn = creadoEn.Time.Format("2006-01-02 15:04:05")
 	}
 
+	itemRows, err := r.db.Query(`
+		SELECT pi.id, pi.pedido_id, pi.producto_id, p.nombre, pi.cantidad, pi.precio, pi.subtotal
+		FROM pedido_items pi JOIN productos p ON p.id = pi.producto_id
+		WHERE pi.pedido_id = $1 ORDER BY pi.id
+	`, id)
+	if err != nil {
+		return nil, err
+	}
+	defer itemRows.Close()
+	for itemRows.Next() {
+		var item interfaces.PedidoItemDB
+		if err := itemRows.Scan(&item.ID, &item.PedidoID, &item.ProductoID, &item.Nombre, &item.Cantidad, &item.Precio, &item.Subtotal); err != nil {
+			return nil, err
+		}
+		p.Items = append(p.Items, item)
+	}
+	if err := itemRows.Err(); err != nil {
+		return nil, err
+	}
+
 	return &p, nil
 }
 
@@ -941,11 +1200,11 @@ func (r *PostgresRepository) ObtenerPedidoPorID(id int) (*interfaces.PedidoDB, e
 func (r *PostgresRepository) ActualizarEstadoPedido(id int, estado string) error {
 	// Validar transiciones válidas
 	estadosValidos := map[string][]string{
-		"pendiente":     {"preparando", "cancelado"},
-		"preparando":    {"enviado", "cancelado"},
-		"enviado":       {"entregado"},
-		"cancelado":      {},
-		"entregado":      {},
+		"pendiente":  {"preparando"},
+		"preparando": {"enviado"},
+		"enviado":    {"entregado"},
+		"cancelado":  {},
+		"entregado":  {},
 	}
 
 	// Obtener estado actual
@@ -984,16 +1243,14 @@ func (r *PostgresRepository) CancelarPedido(id int) error {
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
-		}
-	}()
+	defer tx.Rollback()
 
-	// Actualizar estado a cancelado
-	_, err = tx.Exec("UPDATE pedidos SET estado = 'cancelado' WHERE id = $1", id)
-	if err != nil {
+	var estado string
+	if err = tx.QueryRow("SELECT estado FROM pedidos WHERE id = $1 FOR UPDATE", id).Scan(&estado); err != nil {
 		return err
+	}
+	if estado != "pendiente" && estado != "preparando" {
+		return fmt.Errorf("el pedido no puede cancelarse desde el estado %q", estado)
 	}
 
 	// Devolver stock por cada item
@@ -1007,60 +1264,94 @@ func (r *PostgresRepository) CancelarPedido(id int) error {
 	if err != nil {
 		return err
 	}
-	defer rows.Close()
-
+	var productos []interfaces.PedidoItemDB
 	for rows.Next() {
-		var productoID int
-		var cantidad int
-
-		err := rows.Scan(&productoID, &cantidad)
-		if err != nil {
+		var item interfaces.PedidoItemDB
+		if err = rows.Scan(&item.ProductoID, &item.Cantidad); err != nil {
+			rows.Close()
 			return err
 		}
-
-		_, err = tx.Exec("UPDATE productos SET stock = stock + $1 WHERE id = $2", cantidad, productoID)
-		if err != nil {
+		productos = append(productos, item)
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	for _, item := range productos {
+		if _, err = tx.Exec("UPDATE productos SET stock = stock + $1 WHERE id = $2", item.Cantidad, item.ProductoID); err != nil {
 			return err
 		}
+	}
+	if _, err = tx.Exec("UPDATE pedidos SET estado = 'cancelado' WHERE id = $1", id); err != nil {
+		return err
 	}
 
 	// Revertir comisiones (marcar como revertida)
 	_, err = tx.Exec("UPDATE comisiones SET estado = 'revertida' WHERE pedido_id = $1", id)
 	if err != nil {
-		log.Printf("Advertencia: Error al revertir comisiones: %v", err)
-		// No retornamos error aquí porque la reversión de stock es más crítica
+		return err
 	}
 
-	return tx.Commit()
+	if err = tx.Commit(); err != nil {
+		return err
+	}
+	if config.RedisClient != nil {
+		_ = config.RedisClient.Del(context.Background(), "productos:all").Err()
+	}
+	return nil
+}
+
+// ComisionConReferido representa una comisión con su referido
+type ComisionConReferido struct {
+	ReferidoID int
+	Nivel      int
+	Porcentaje float64
+	Monto      float64
 }
 
 // CrearComisiones crea comisiones para un pedido dentro de la transacción
 func (r *PostgresRepository) CrearComisiones(pedidoID int, usuarioID int, total float64) error {
-	// Calcular comisiones usando la función pura del dominio
-	comisionesCalculadas := domain.RepartirComisiones(total)
+	return crearComisionesTx(r.db, pedidoID, usuarioID, total)
+}
 
-	// Obtener la cadena de referidos ascendentes hasta 3 niveles
-	referidos := r.obtenerCadenaReferidos(usuarioID)
+type commissionDB interface {
+	QueryRow(query string, args ...any) *sql.Row
+	Exec(query string, args ...any) (sql.Result, error)
+}
 
-	// Crear comisiones para cada referido en la cadena
-	for i, referido := range referidos {
-		if i < len(comisionesCalculadas) {
-			comision := comisionesCalculadas[i]
-			referido.Monto = comision.Monto
-
-			// Insertar comisión en ledger
-			query := `
-				INSERT INTO comisiones (pedido_id, referido_id, nivel, porcentaje, monto, estado)
-				VALUES ($1, $2, $3, $4, $5, 'pendiente')
-			`
-
-			_, err := r.db.Exec(query, pedidoID, referido.ReferidoID, referido.Nivel, referido.Porcentaje, referido.Monto)
-			if err != nil {
-				return err
-			}
-		}
+func crearComisionesTx(db commissionDB, pedidoID, usuarioID int, total float64) error {
+	var referidoID sql.NullInt64
+	if err := db.QueryRow("SELECT referido_id FROM usuarios WHERE id = $1", usuarioID).Scan(&referidoID); err != nil {
+		return err
+	}
+	if !referidoID.Valid {
+		return nil
 	}
 
+	comisiones := domain.RepartirComisiones(total)
+	currentID := int(referidoID.Int64)
+	for i, comision := range comisiones {
+		var parentID sql.NullInt64
+		if err := db.QueryRow("SELECT parent_id FROM referidos WHERE id = $1", currentID).Scan(&parentID); err != nil {
+			return err
+		}
+		if !parentID.Valid {
+			break
+		}
+		if _, err := db.Exec(`
+			INSERT INTO comisiones (pedido_id, referido_id, nivel, porcentaje, monto, estado)
+			VALUES ($1, $2, $3, $4, $5, 'pendiente')
+		`, pedidoID, int(parentID.Int64), i+1, comision.Porcentaje, comision.Monto); err != nil {
+			return err
+		}
+		if _, err := db.Exec("UPDATE referidos SET ventas = ventas + $1 WHERE id = $2", total, int(parentID.Int64)); err != nil {
+			return err
+		}
+		currentID = int(parentID.Int64)
+	}
 	return nil
 }
 
@@ -1091,9 +1382,9 @@ func (r *PostgresRepository) obtenerCadenaReferidos(usuarioID int) []ComisionCon
 
 		referidos = append(referidos, ComisionConReferido{
 			ReferidoID: int(parentID.Int64),
-			Nivel:       i + 1,
-			Porcentaje:  porcentajes[i],
-			Monto:       0, // Se calculará según el total
+			Nivel:      i + 1,
+			Porcentaje: porcentajes[i],
+			Monto:      0, // Se calculará según el total
 		})
 
 		currentID = int(parentID.Int64)
@@ -1174,7 +1465,6 @@ func (r *PostgresRepository) ObtenerComisionesPendientes() ([]interfaces.Comisio
 		var c interfaces.ComisionDB
 		var liquidacionID sql.NullInt64
 		var creadoEn sql.NullTime
-		var nombre string
 
 		err := rows.Scan(
 			&c.ID,
@@ -1186,7 +1476,7 @@ func (r *PostgresRepository) ObtenerComisionesPendientes() ([]interfaces.Comisio
 			&c.Estado,
 			&liquidacionID,
 			&creadoEn,
-			&nombre,
+			&c.ReferidoNombre,
 		)
 		if err != nil {
 			return nil, err
@@ -1214,11 +1504,35 @@ func (r *PostgresRepository) CrearLiquidacion(referidoID int, total float64) err
 		return err
 	}
 
-	defer func() {
-		if err != nil {
-			tx.Rollback()
+	defer tx.Rollback()
+
+	// Calcular y bloquear las comisiones pendientes; el total del cliente no es fuente de verdad.
+	rows, err := tx.Query(`SELECT id, monto FROM comisiones WHERE referido_id = $1 AND estado = 'pendiente' FOR UPDATE`, referidoID)
+	if err != nil {
+		return err
+	}
+	var comisionIDs []int
+	var totalPendiente float64
+	for rows.Next() {
+		var id int
+		var monto float64
+		if err = rows.Scan(&id, &monto); err != nil {
+			rows.Close()
+			return err
 		}
-	}()
+		comisionIDs = append(comisionIDs, id)
+		totalPendiente += monto
+	}
+	if err = rows.Err(); err != nil {
+		rows.Close()
+		return err
+	}
+	if err = rows.Close(); err != nil {
+		return err
+	}
+	if len(comisionIDs) == 0 || totalPendiente <= 0 {
+		return fmt.Errorf("no hay comisiones pendientes para liquidar")
+	}
 
 	// Crear liquidación
 	query := `
@@ -1228,7 +1542,7 @@ func (r *PostgresRepository) CrearLiquidacion(referidoID int, total float64) err
 	`
 
 	var liquidacionID int
-	err = tx.QueryRow(query, referidoID, total).Scan(&liquidacionID)
+	err = tx.QueryRow(query, referidoID, totalPendiente).Scan(&liquidacionID)
 	if err != nil {
 		return err
 	}
@@ -1351,26 +1665,23 @@ func (r *PostgresRepository) ObtenerLiquidacionesTodas() ([]interfaces.Liquidaci
 
 // ObtenerReporteResumen retorna reporte de resumen de ventas
 func (r *PostgresRepository) ObtenerReporteResumen(desde, hasta string) (map[string]interface{}, error) {
-	// Si no se especifican fechas, usar todo el historial
 	query := `
-		SELECT
-			COUNT(*) as total_pedidos,
-			COALESCE(SUM(total)) as total_vendido,
-			COALESCE(AVG(total)) as ticket_promedio,
-			COALESCE(SUM(monto)) as comisiones_devengadas
-		FROM pedidos
-		WHERE estado != 'cancelado'
+		SELECT COUNT(*), COALESCE(SUM(p.total), 0), COALESCE(AVG(p.total), 0),
+			COALESCE((SELECT SUM(c.monto) FROM comisiones c JOIN pedidos pc ON pc.id = c.pedido_id
+				WHERE pc.estado <> 'cancelado' AND c.estado <> 'revertida'
+				AND ($1 = '' OR pc.creado_en >= $1::date)
+				AND ($2 = '' OR pc.creado_en < ($2::date + INTERVAL '1 day'))), 0)
+		FROM pedidos p
+		WHERE p.estado <> 'cancelado'
+		AND ($1 = '' OR p.creado_en >= $1::date)
+		AND ($2 = '' OR p.creado_en < ($2::date + INTERVAL '1 day'))
 	`
-
-	if desde != "" && hasta != "" {
-		query += fmt.Sprintf(" AND creado_en BETWEEN '%s' AND '%s'", desde, hasta)
-	}
 
 	result := make(map[string]interface{})
 	var totalPedidos int
 	var totalVendido, ticketPromedio, comisionesDevengadas sql.NullFloat64
 
-	err := r.db.QueryRow(query).Scan(
+	err := r.db.QueryRow(query, desde, hasta).Scan(
 		&totalPedidos,
 		&totalVendido,
 		&ticketPromedio,
@@ -1394,7 +1705,7 @@ func (r *PostgresRepository) ObtenerTopProductos(limit int) ([]map[string]interf
 		SELECT
 			p.id,
 			p.nombre,
-			p.categoria,
+			COALESCE(p.categoria, ''),
 			SUM(pi.cantidad) as total_vendido,
 			SUM(pi.subtotal) as total_ingresos
 		FROM pedido_items pi
@@ -1425,11 +1736,11 @@ func (r *PostgresRepository) ObtenerTopProductos(limit int) ([]map[string]interf
 		}
 
 		productos = append(productos, map[string]interface{}{
-			"id":              id,
-			"nombre":           nombre,
-			"categoria":        categoria,
-			"total_vendido":    totalVendido,
-			"total_ingresos":   totalIngresos,
+			"id":             id,
+			"nombre":         nombre,
+			"categoria":      categoria,
+			"total_vendido":  totalVendido,
+			"total_ingresos": totalIngresos,
 		})
 	}
 
@@ -1443,7 +1754,7 @@ func (r *PostgresRepository) ObtenerTopReferidos(limit int) ([]map[string]interf
 			r.id,
 			r.nombre,
 			r.nivel,
-			r.ventas,
+			COALESCE(r.ventas, 0),
 			COUNT(c.id) as total_comisiones
 		FROM referidos r
 		LEFT JOIN comisiones c ON r.id = c.referido_id
@@ -1472,11 +1783,11 @@ func (r *PostgresRepository) ObtenerTopReferidos(limit int) ([]map[string]interf
 		}
 
 		referidos = append(referidos, map[string]interface{}{
-			"id":              id,
+			"id":               id,
 			"nombre":           nombre,
 			"nivel":            nivel,
 			"ventas":           ventas,
-			"total_comisiones":  totalComisiones,
+			"total_comisiones": totalComisiones,
 		})
 	}
 

@@ -13,6 +13,10 @@ const Catalogo = () => {
   const { addToCart } = useCart();
   const [productos, setProductos] = useState<Producto[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
+  const [total, setTotal] = useState(0);
+  const [page, setPage] = useState(1);
+  const [error, setError] = useState('');
+  const pageSize = 12;
 
   // Lectura del query string (?categoria=...) enviado desde el Storefront
   const [searchParams, setSearchParams] = useSearchParams();
@@ -22,30 +26,29 @@ const Catalogo = () => {
   const [categoria, setCategoria] = useState<string>(searchParams.get("categoria") ?? "Todas");
 
   useEffect(() => {
-    // Consumimos el servicio de productos (mock que simula la API)
-    getProductos()
+    let vigente = true;
+    setLoading(true);
+    getProductos(busqueda, page, pageSize, categoria)
       .then((data) => {
-        setProductos(data);
-        setLoading(false);
+        if (vigente) { setProductos(data?.data ?? []); setTotal(data?.total ?? 0); setError(''); }
       })
-      .catch(() => setLoading(false));
-  }, []);
+      .catch((err) => { if (vigente) { setProductos([]); setError(err instanceof Error ? err.message : 'No se pudo cargar el catálogo.'); } })
+      .finally(() => { if (vigente) setLoading(false); });
+    return () => { vigente = false; };
+  }, [busqueda, page, categoria]);
 
   // Filtrado con useMemo: solo se recalcula cuando cambian busqueda/categoria/productos
   const productosFiltrados = useMemo(() => {
-    const texto = busqueda.trim().toLowerCase();
     return productos.filter((prod) => {
       const coincideCategoria = categoria === "Todas" || prod.categoria === categoria;
-      const coincideTexto =
-        texto === "" ||
-        prod.nombre.toLowerCase().includes(texto) ||
-        prod.descripcion.toLowerCase().includes(texto);
-      return coincideCategoria && coincideTexto;
+      return coincideCategoria;
     });
-  }, [productos, busqueda, categoria]);
+  }, [productos, categoria]);
+  const categoriasDisponibles = useMemo(() => [...new Set([...categorias, ...productos.map(p => p.categoria).filter(Boolean)])].sort(), [productos]);
 
   const handleCategoriaChange = (value: string) => {
     setCategoria(value);
+    setPage(1);
     // Sincronizamos el query string para que la URL sea compartible
     if (value === "Todas") {
       setSearchParams({});
@@ -62,15 +65,16 @@ const Catalogo = () => {
     <div>
       <h1 className="text-2xl font-bold text-slate-800 mb-2">Catálogo de Productos</h1>
       <p className="text-slate-500 mb-6">
-        {productosFiltrados.length} producto(s) encontrado(s)
+        {total} producto(s) en el catálogo
       </p>
+      {error && <p role="alert" className="mb-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
 
       {/* ===== BARRA DE BÚSQUEDA Y FILTROS ===== */}
       <div className="flex flex-col md:flex-row gap-4 mb-8">
         <input
           type="text"
           value={busqueda}
-          onChange={(e) => setBusqueda(e.target.value)}
+          onChange={(e) => { setBusqueda(e.target.value); setPage(1); }}
           placeholder="Buscar por nombre o descripción..."
           className="flex-1 px-4 py-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition"
         />
@@ -80,7 +84,7 @@ const Catalogo = () => {
           className="px-4 py-3 rounded-lg border border-slate-300 bg-white focus:ring-2 focus:ring-indigo-600 focus:border-indigo-600 outline-none transition"
         >
           <option value="Todas">Todas las categorías</option>
-          {categorias.map((cat) => (
+          {categoriasDisponibles.map((cat) => (
             <option key={cat} value={cat}>
               {cat}
             </option>
@@ -132,17 +136,23 @@ const Catalogo = () => {
                   ${prod.precio.toFixed(2)}
                 </p>
 
-                <button
+                  <button
                   onClick={() => addToCart(prod)}
+                    disabled={prod.stock === 0}
                   className="mt-auto w-full bg-slate-900 text-white py-2 rounded text-sm hover:bg-indigo-600 transition"
                 >
-                  Añadir al Carrito
+                  {prod.stock === 0 ? "Agotado" : "Añadir al Carrito"}
                 </button>
               </div>
             </div>
           ))}
         </div>
       )}
+      <div className="mt-8 flex items-center justify-center gap-4">
+        <button disabled={page <= 1} onClick={() => setPage(p => p - 1)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">Anterior</button>
+        <span className="text-sm text-slate-600">Página {page} de {Math.max(1, Math.ceil(total / pageSize))}</span>
+        <button disabled={page * pageSize >= total} onClick={() => setPage(p => p + 1)} className="rounded-lg border border-slate-300 px-4 py-2 text-sm disabled:opacity-40">Siguiente</button>
+      </div>
     </div>
   );
 };

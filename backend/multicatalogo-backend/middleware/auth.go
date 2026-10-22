@@ -36,7 +36,12 @@ func RequireAuth(c *fiber.Ctx) error {
 	c.Locals("user_id", claims.Sub)
 	c.Locals("email", claims.Email)
 	c.Locals("rol", claims.Rol)
-	c.Locals("referido_id", claims.ReferidoID)
+	// Las rutas esperan un int, no el *int usado para representar un claim opcional.
+	if claims.ReferidoID != nil {
+		c.Locals("referido_id", *claims.ReferidoID)
+	} else {
+		c.Locals("referido_id", nil)
+	}
 
 	return c.Next()
 }

@@ -42,9 +42,13 @@ const NAV_ITEMS: NavItem[] = [
     to: "/mi-red",
     label: "Mi Red",
     title: "Mi Red",
-    soloAdmin: true,
     icon: "M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z",
   },
+  { to: "/mis-pedidos", label: "Mis pedidos", title: "Mis pedidos", icon: "M3 3h18v4H3zM5 7v13h14V7M9 11h6m-6 4h6" },
+  { to: "/admin/productos", label: "Gestionar productos", title: "Gestionar productos", soloAdmin: true, icon: "M12 4v16m8-8H4" },
+  { to: "/admin/pedidos", label: "Gestionar pedidos", title: "Gestionar pedidos", soloAdmin: true, icon: "M4 4h16v16H4zM8 8h8M8 12h8M8 16h5" },
+  { to: "/admin/usuarios", label: "Usuarios", title: "Usuarios", soloAdmin: true, icon: "M16 21v-2a4 4 0 00-4-4H6a4 4 0 00-4 4v2m16-11a4 4 0 11-8 0 4 4 0 018 0m2 4a4 4 0 014 4v3" },
+  { to: "/admin/liquidaciones", label: "Liquidaciones", title: "Liquidaciones", soloAdmin: true, icon: "M12 8c-2 0-3 .9-3 2s1 2 3 2 3 1 3 2-1 2-3 2m0-8V6m0 12v-2m9-4a9 9 0 11-18 0 9 9 0 0118 0z" },
 ];
 
 const Sidebar = ({ isCollapsed, isMobileOpen, closeMobileMenu }: SidebarProps) => {

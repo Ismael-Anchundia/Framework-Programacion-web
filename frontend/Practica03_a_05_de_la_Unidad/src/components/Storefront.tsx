@@ -18,9 +18,9 @@ const Storefront = () => {
 
   useEffect(() => {
     // Consumimos el servicio de productos (mock que simula la API)
-    getProductos()
+    getProductos('', 1, 4)
       .then((data) => {
-        setDestacados(data.slice(0, 4)); // mostramos solo 4 destacados
+        setDestacados(data?.data ?? []); // mostramos solo 4 destacados
         setLoading(false);
       })
       .catch(() => setLoading(false));
@@ -55,9 +55,7 @@ const Storefront = () => {
             >
               Ver Catálogo Completo
             </Link>
-            {/* La red multinivel (Mi Red) es exclusiva del administrador:
-                no se muestra a los clientes para evitar enlaces no funcionales */}
-            {user?.rol === "admin" && (
+            {user && (
               <Link
                 to="/mi-red"
                 className="border-2 border-white/60 text-white font-bold px-8 py-4 rounded-lg hover:bg-white/10 transition"

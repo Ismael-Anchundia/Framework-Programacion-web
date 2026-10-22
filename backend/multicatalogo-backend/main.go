@@ -11,6 +11,7 @@ import (
 	"github.com/gofiber/fiber/v2"
 	// Importamos el middleware CORS para gestionar la seguridad entre distintos puertos/dominios.
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	// Importamos nuestro propio paquete de rutas para delegarle la configuración de los endpoints.
 	"multicatalogo-backend/routes"
 	// Importamos nuestro paquete config para la conexión a la base de datos
@@ -49,20 +50,26 @@ func main() {
 	registerController := controllers.NewRegisterController(dbRepo)
 	adminProductosController := controllers.NewAdminProductosController(dbRepo)
 	pedidosController := controllers.NewPedidosController(dbRepo)
+	comisionesController := controllers.NewComisionesController(dbRepo)
+	liquidacionesController := controllers.NewLiquidacionesController(dbRepo)
+	reportesController := controllers.NewReportesController(dbRepo)
+	usuariosController := controllers.NewUsuariosController(dbRepo)
 
 	// Instanciamos una nueva aplicación de Fiber y la guardamos en la variable 'app'.
 	app := fiber.New()
+	// Evita que un panic en el procesamiento de una petición termine todo el proceso.
+	app.Use(recover.New())
 
 	// Implementamos el middleware CORS a nivel global usando app.Use() para interceptar todas las peticiones entrantes.
 	app.Use(cors.New(cors.Config{
 		// Configuramos el CORS para permitir únicamente peticiones provenientes del frontend local en el puerto 5173.
 		AllowOrigins: "http://localhost:5173",
 		// Declaramos de forma explícita qué cabeceras (Headers) se permitirán en la comunicación.
-		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
 
 	// Llamamos a la función SetupRoutes de nuestro paquete 'routes', enviándole la instancia de nuestra 'app' y los controladores.
-	routes.SetupRoutes(app, authController, prodController, redController, checkoutController, registerController, adminProductosController, pedidosController)
+	routes.SetupRoutes(app, authController, prodController, redController, checkoutController, registerController, adminProductosController, pedidosController, comisionesController, liquidacionesController, reportesController, usuariosController)
 
 	// Configuramos graceful shutdown
 	c := make(chan os.Signal, 1)
@@ -78,12 +85,10 @@ func main() {
 
 	// Ponemos a la aplicación a escuchar peticiones en el puerto 3000 de la máquina local. (Bloquea el hilo de ejecución).
 	log.Println("Servidor iniciado en http://localhost:3000")
-	app.Listen(":3000")
+	if err := app.Listen(":3000"); err != nil {
+		log.Fatalf("Error al iniciar el servidor: %v", err)
+	}
 }
-
-
-
-
 
 // // main.go
 // package main

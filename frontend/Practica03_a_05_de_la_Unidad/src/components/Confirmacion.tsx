@@ -6,6 +6,7 @@ import { Link, useLocation } from 'react-router-dom';
 
 interface PedidoConfirmado {
   numero: string;
+  estado?: string;
   items: { nombre: string; cantidad: number; precio: number }[];
   total: number;
   cliente: { nombre: string; email: string; ciudad: string };
@@ -38,10 +39,11 @@ const Confirmacion = () => {
       <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden">
         <div className="bg-green-600 text-white p-8 text-center">
           <div className="text-5xl mb-3">✓</div>
-          <h1 className="text-2xl font-bold">¡Pedido confirmado!</h1>
+          <h1 className="text-2xl font-bold">¡Pedido registrado!</h1>
           <p className="text-green-100 mt-1">
             Número de pedido: <span className="font-mono font-bold">{pedido.numero}</span>
           </p>
+          {pedido.estado && <p className="mt-1 text-sm text-green-100">Estado: {pedido.estado}</p>}
         </div>
 
         <div className="p-8">
@@ -78,7 +80,7 @@ const Confirmacion = () => {
             ))}
           </div>
           <div className="flex justify-between items-center mb-8">
-            <span className="font-bold text-slate-800">Total pagado</span>
+            <span className="font-bold text-slate-800">Total del pedido</span>
             <span className="text-2xl font-bold text-green-600">
               ${pedido.total.toFixed(2)}
             </span>
@@ -98,6 +100,7 @@ const Confirmacion = () => {
               Ver Catálogo
             </Link>
           </div>
+          <Link to="/mis-pedidos" className="mt-4 block text-center text-sm font-semibold text-indigo-600 hover:underline">Consultar mis pedidos</Link>
         </div>
       </div>
     </div>

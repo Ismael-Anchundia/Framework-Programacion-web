@@ -2,10 +2,10 @@
 package controllers
 
 import (
-	"strconv"
 	"multicatalogo-backend/interfaces"
 	"multicatalogo-backend/middleware"
 	"multicatalogo-backend/models"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -24,7 +24,17 @@ func NewProdController(repo interfaces.DBRepository) *ProdController {
 
 // GetProductos maneja el endpoint GET /api/productos
 func (pc *ProdController) GetProductos(c *fiber.Ctx) error {
-	productos, err := pc.repo.ObtenerProductos()
+	busqueda := c.Query("q", "")
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 10)
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+
+	productos, total, err := pc.repo.ObtenerProductosPaginados(busqueda, c.Query("categoria"), page, limit)
 	if err != nil {
 		return c.Status(500).JSON(middleware.SanitizeError(models.APIError{
 			Status:  500,
@@ -33,7 +43,7 @@ func (pc *ProdController) GetProductos(c *fiber.Ctx) error {
 		}))
 	}
 
-	return c.JSON(productos)
+	return c.JSON(fiber.Map{"data": productos, "page": page, "limit": limit, "total": total})
 }
 
 // GetProductoPorID maneja el endpoint GET /api/productos/:id

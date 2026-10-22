@@ -14,8 +14,11 @@ import (
 
 // GetProductos es la función controladora encargada de devolver el catálogo de artículos.
 func GetProductos(c *fiber.Ctx) error {
+	// Obtenemos el parámetro de búsqueda
+	busqueda := c.Query("q", "")
+
 	// Obtenemos los productos desde la base de datos usando el repository
-	productos, err := repository.ObtenerProductos()
+	productos, err := repository.ObtenerProductos(busqueda)
 	if err != nil {
 		return c.Status(500).JSON(models.APIError{
 			Status:  500,

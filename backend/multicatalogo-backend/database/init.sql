@@ -1,6 +1,17 @@
 -- Script de inicialización de la base de datos multicatalogo
 -- Crea las tablas necesarias y popula con los datos iniciales
 
+-- Tabla de referidos (se crea antes de usuarios porque usuarios la referencia)
+CREATE TABLE IF NOT EXISTS referidos (
+    id SERIAL PRIMARY KEY,
+    nombre VARCHAR(255) NOT NULL,
+    nivel INTEGER NOT NULL CHECK (nivel >= 0),
+    ventas DECIMAL(10, 2) DEFAULT 0,
+    parent_id INTEGER REFERENCES referidos(id) ON DELETE SET NULL,
+    codigo VARCHAR(20) UNIQUE,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
 -- Tabla de usuarios
 CREATE TABLE IF NOT EXISTS usuarios (
     id SERIAL PRIMARY KEY,
@@ -28,28 +39,18 @@ CREATE TABLE IF NOT EXISTS productos (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
--- Tabla de referidos (estructura jerárquica con parent_id)
-CREATE TABLE IF NOT EXISTS referidos (
-    id SERIAL PRIMARY KEY,
-    nombre VARCHAR(255) NOT NULL,
-    nivel INTEGER NOT NULL CHECK (nivel >= 0),
-    ventas DECIMAL(10, 2) DEFAULT 0,
-    parent_id INTEGER REFERENCES referidos(id) ON DELETE SET NULL,
-    codigo VARCHAR(20) UNIQUE, -- Código de invitación
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-);
-
 -- Tabla de pedidos
 CREATE TABLE IF NOT EXISTS pedidos (
     id SERIAL PRIMARY KEY,
     usuario_id INTEGER REFERENCES usuarios(id) ON DELETE CASCADE,
     total DECIMAL(10, 2) NOT NULL,
-    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'procesando', 'completado', 'cancelado')),
+    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'preparando', 'enviado', 'entregado', 'cancelado')),
     direccion VARCHAR(500),
     metodo_pago VARCHAR(100),
     ciudad VARCHAR(100),
     provincia VARCHAR(100),
     codigo_postal VARCHAR(20),
+    creado_en TIMESTAMP DEFAULT NOW(),
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -63,24 +64,6 @@ CREATE TABLE IF NOT EXISTS pedido_items (
     subtotal DECIMAL(10, 2) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
-
--- Tabla de comisiones (ledger de comisiones)
-CREATE TABLE IF NOT EXISTS comisiones (
-    id SERIAL PRIMARY KEY,
-    pedido_id INTEGER REFERENCES pedidos(id) ON DELETE CASCADE,
-    referido_id INTEGER REFERENCES referidos(id) ON DELETE CASCADE,
-    nivel INTEGER NOT NULL CHECK (nivel >= 1 AND nivel <= 3),
-    porcentaje DECIMAL(5, 2) NOT NULL,
-    monto DECIMAL(10, 2) NOT NULL,
-    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'aprobada', 'pagada', 'revertida')),
-    liquidacion_id INTEGER REFERENCES liquidaciones(id) ON DELETE SET NULL,
-    creado_en TIMESTAMP DEFAULT NOW()
-);
-
--- Índices para comisiones
-CREATE INDEX IF NOT EXISTS idx_comisiones_referido_pedido ON comisiones(referido_id, pedido_id);
-CREATE INDEX IF NOT EXISTS idx_comisiones_pedido ON comisiones(pedido_id);
-CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
 
 -- Tabla de liquidaciones
 CREATE TABLE IF NOT EXISTS liquidaciones (
@@ -96,11 +79,22 @@ CREATE TABLE IF NOT EXISTS liquidaciones (
 CREATE INDEX IF NOT EXISTS idx_liquidaciones_referido ON liquidaciones(referido_id);
 CREATE INDEX IF NOT EXISTS idx_liquidaciones_estado ON liquidaciones(estado);
 
--- Insertar usuarios iniciales
-INSERT INTO usuarios (email, password, rol, nombre, referido_id) VALUES
-    ('admin@upse.edu.ec', '123456', 'admin', 'Administrador', 0),
-    ('cliente@upse.edu.ec', '123456', 'cliente', 'Cliente Demo', 2)
-ON CONFLICT (email) DO NOTHING;
+-- Tabla de comisiones (se crea después de liquidaciones porque la referencia)
+CREATE TABLE IF NOT EXISTS comisiones (
+    id SERIAL PRIMARY KEY,
+    pedido_id INTEGER REFERENCES pedidos(id) ON DELETE CASCADE,
+    referido_id INTEGER REFERENCES referidos(id) ON DELETE CASCADE,
+    nivel INTEGER NOT NULL CHECK (nivel >= 1 AND nivel <= 3),
+    porcentaje DECIMAL(5, 2) NOT NULL,
+    monto DECIMAL(10, 2) NOT NULL,
+    estado VARCHAR(50) DEFAULT 'pendiente' CHECK (estado IN ('pendiente', 'aprobada', 'pagada', 'revertida')),
+    liquidacion_id INTEGER REFERENCES liquidaciones(id) ON DELETE SET NULL,
+    creado_en TIMESTAMP DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_comisiones_referido_pedido ON comisiones(referido_id, pedido_id);
+CREATE INDEX IF NOT EXISTS idx_comisiones_pedido ON comisiones(pedido_id);
+CREATE INDEX IF NOT EXISTS idx_comisiones_estado ON comisiones(estado);
 
 -- Insertar productos iniciales (basados en el frontend)
 INSERT INTO productos (id, nombre, descripcion, precio, categoria, img, galeria, stock) VALUES
@@ -114,6 +108,12 @@ INSERT INTO productos (id, nombre, descripcion, precio, categoria, img, galeria,
     (8, 'Kit Rutina Completa', 'Kit integral con serum, crema, tónico y mascarilla. La rutina perfecta para comenzar: limpieza, tratamiento e hidratación.', 129.00, 'Kit', 'https://picsum.photos/seed/kit/600', ARRAY['https://picsum.photos/seed/kit1/600', 'https://picsum.photos/seed/kit2/600', 'https://picsum.photos/seed/kit3/600'], 25)
 ON CONFLICT (id) DO NOTHING;
 
+-- Insertar usuarios con relación vacía; se vincula al referido después del seed.
+INSERT INTO usuarios (email, password, rol, nombre, referido_id) VALUES
+    ('admin@upse.edu.ec', '123456', 'admin', 'Administrador', NULL),
+    ('cliente@upse.edu.ec', '123456', 'cliente', 'Cliente Demo', NULL)
+ON CONFLICT (email) DO NOTHING;
+
 -- Insertar referidos iniciales (estructura jerárquica aplanada con parent_id)
 -- Basado en la estructura del frontend red.ts
 INSERT INTO referidos (id, nombre, nivel, ventas, parent_id, codigo) VALUES
@@ -123,5 +123,14 @@ INSERT INTO referidos (id, nombre, nivel, ventas, parent_id, codigo) VALUES
     (4, 'Carlos Ruiz', 2, 500.00, 1, 'CARLOS'),
     (5, 'Sofía León', 2, 430.00, 1, 'SOFIA'),
     (6, 'Marco Díaz', 2, 380.00, 2, 'MARCO'),
-    (7, 'Diana Paz', 3, 300.00, 4, 'DIANA')
+    (7, 'Diana Paz', 3, 300.00, 4, 'DIANA'),
+    (8, 'Cliente Demo', 2, 0.00, 2, 'CLIENTE')
 ON CONFLICT (id) DO NOTHING;
+
+UPDATE usuarios SET referido_id = 8 WHERE email = 'cliente@upse.edu.ec';
+
+SELECT setval(pg_get_serial_sequence('productos', 'id'), COALESCE((SELECT MAX(id) FROM productos), 1), true);
+SELECT setval(pg_get_serial_sequence('referidos', 'id'), COALESCE((SELECT MAX(id) FROM referidos), 1), true);
+SELECT setval(pg_get_serial_sequence('usuarios', 'id'), COALESCE((SELECT MAX(id) FROM usuarios), 1), true);
+SELECT setval(pg_get_serial_sequence('pedidos', 'id'), COALESCE((SELECT MAX(id) FROM pedidos), 1), true);
+SELECT setval(pg_get_serial_sequence('pedido_items', 'id'), COALESCE((SELECT MAX(id) FROM pedido_items), 1), true);

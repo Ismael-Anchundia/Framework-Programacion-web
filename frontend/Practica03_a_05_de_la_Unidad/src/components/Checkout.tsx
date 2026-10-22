@@ -6,12 +6,16 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
 interface DatosEnvio {
   nombre: string;
   email: string;
   direccion: string;
   ciudad: string;
+  provincia: string;
+  codigoPostal: string;
   telefono: string;
   metodoPago: string;
 }
@@ -20,6 +24,7 @@ const METODOS_PAGO = ["Tarjeta de crédito", "Transferencia bancaria", "Efectivo
 
 const Checkout = () => {
   const { cart, totalPrice, clearCart } = useCart();
+  const { user } = useAuth();
   const navigate = useNavigate();
 
   const [datos, setDatos] = useState<DatosEnvio>({
@@ -27,10 +32,13 @@ const Checkout = () => {
     email: "",
     direccion: "",
     ciudad: "",
+    provincia: "",
+    codigoPostal: "",
     telefono: "",
     metodoPago: METODOS_PAGO[0],
   });
   const [procesando, setProcesando] = useState<boolean>(false);
+  const [error, setError] = useState<string>("");
 
   // Si el carrito está vacío, mostramos un aviso en lugar del formulario
   if (cart.length === 0) {
@@ -48,28 +56,38 @@ const Checkout = () => {
     setDatos((prev) => ({ ...prev, [campo]: valor }));
   };
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     setProcesando(true);
-
-    // Simulamos el procesamiento del pago con un pequeño retraso
-    setTimeout(() => {
+    setError("");
+    try {
+      const response = await api<{ pedido_id: number; total: number; estado: string; mensaje: string }>("/api/checkout", {
+        method: "POST",
+        body: JSON.stringify({
+          direccion: datos.direccion,
+          ciudad: datos.ciudad,
+          provincia: datos.provincia,
+          codigo_postal: datos.codigoPostal,
+          metodo_pago: datos.metodoPago,
+          items: cart.map(item => ({ producto_id: item.id, cantidad: item.cantidad, precio: item.precio })),
+        }),
+      });
       const pedido = {
-        numero: `MC-${Date.now().toString().slice(-6)}`,
-        items: cart.map((item) => ({
-          nombre: item.nombre,
-          cantidad: item.cantidad,
-          precio: item.precio,
-        })),
-        total: totalPrice,
-        cliente: { nombre: datos.nombre, email: datos.email, ciudad: datos.ciudad },
+        numero: `MC-${response.pedido_id}`,
+        pedido_id: response.pedido_id,
+        items: cart.map(item => ({ nombre: item.nombre, cantidad: item.cantidad, precio: item.precio })),
+        total: response.total,
+        estado: response.estado,
+        cliente: { nombre: datos.nombre || user?.email || "Cliente", email: user?.email || "", ciudad: datos.ciudad },
         fecha: new Date().toLocaleString("es-EC"),
       };
-
-      // Vaciamos el carrito y pasamos los datos del pedido a la confirmación
       clearCart();
       navigate("/confirmacion", { state: { pedido } });
-    }, 1200);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo registrar el pedido.");
+    } finally {
+      setProcesando(false);
+    }
   };
 
   return (
@@ -79,6 +97,7 @@ const Checkout = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* ===== FORMULARIO DE ENVÍO ===== */}
         <form onSubmit={handleSubmit} className="lg:col-span-2 space-y-5">
+          {error && <p role="alert" className="rounded-lg bg-red-50 p-3 text-sm text-red-700">{error}</p>}
           <div className="bg-white p-6 rounded-lg border border-slate-200 shadow-sm">
             <h2 className="text-lg font-bold text-slate-800 mb-4">Datos de Envío</h2>
 
@@ -94,6 +113,14 @@ const Checkout = () => {
                   onChange={(e) => handleChange("nombre", e.target.value)}
                   className="w-full px-4 py-2.5 rounded-lg border border-slate-300 focus:ring-2 focus:ring-indigo-600 outline-none transition"
                 />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Provincia *</label>
+                <input type="text" required value={datos.provincia} onChange={(e) => handleChange("provincia", e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300" />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-slate-700 mb-1">Código postal *</label>
+                <input type="text" required value={datos.codigoPostal} onChange={(e) => handleChange("codigoPostal", e.target.value)} className="w-full px-4 py-2.5 rounded-lg border border-slate-300" />
               </div>
               <div>
                 <label className="block text-sm font-medium text-slate-700 mb-1">

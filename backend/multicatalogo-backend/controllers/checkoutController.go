@@ -7,6 +7,7 @@ import (
 	"multicatalogo-backend/interfaces"
 	"multicatalogo-backend/middleware"
 	"multicatalogo-backend/models"
+	"strings"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -62,25 +63,19 @@ func (cc *CheckoutController) ProcesarCheckout(c *fiber.Ctx) error {
 		}))
 	}
 
-	// Calcular total del pedido
-	var total float64
+	// El repositorio calcula el total desde precios actuales de la base de datos.
 	itemsDB := make([]interfaces.PedidoItemDB, len(req.Items))
 	for i, item := range req.Items {
-		subtotal := float64(item.Cantidad) * item.Precio
-		total += subtotal
-
 		itemsDB[i] = interfaces.PedidoItemDB{
 			ProductoID: item.ProductoID,
 			Cantidad:   item.Cantidad,
-			Precio:     item.Precio,
-			Subtotal:   subtotal,
 		}
 	}
 
 	// Crear pedido con transacción ACID
 	pedidoDB := &interfaces.PedidoDB{
 		UsuarioID:    userID.(int),
-		Total:        total,
+		Total:        0,
 		Estado:       "pendiente",
 		Direccion:    req.Direccion,
 		MetodoPago:   req.MetodoPago,
@@ -91,26 +86,24 @@ func (cc *CheckoutController) ProcesarCheckout(c *fiber.Ctx) error {
 
 	err := cc.repo.CrearPedido(pedidoDB, itemsDB)
 	if err != nil {
-		return c.Status(500).JSON(middleware.SanitizeError(models.APIError{
-			Status:  500,
+		status := 500
+		if strings.Contains(err.Error(), "no disponible") || strings.Contains(err.Error(), "cantidad") {
+			status = 400
+		}
+		return c.Status(status).JSON(middleware.SanitizeError(models.APIError{
+			Status:  status,
 			Message: "Error al crear pedido",
 			Details: err.Error(),
 		}))
 	}
 
-	// Crear comisiones en el ledger (síncrono para garantizar consistencia)
-	err = cc.repo.CrearComisiones(pedidoDB.ID, userID.(int), total)
-	if err != nil {
-		log.Printf("Error al crear comisiones: %v", err)
-		// No retornamos error porque el pedido ya se creó
-	}
+	total := pedidoDB.Total
 
 	// Invalidar caché de la red del usuario
 	cacheKey := "red:tree:" + email.(string)
 	go func() {
-		err = cc.cache.Delete(cacheKey)
-		if err != nil {
-			log.Printf("Error al invalidar caché: %v", err)
+		if cacheErr := cc.cache.Delete(cacheKey); cacheErr != nil {
+			log.Printf("Error al invalidar caché: %v", cacheErr)
 		}
 	}()
 

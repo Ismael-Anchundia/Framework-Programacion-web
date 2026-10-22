@@ -2,10 +2,10 @@
 package controllers
 
 import (
-	"strconv"
 	"multicatalogo-backend/interfaces"
 	"multicatalogo-backend/middleware"
 	"multicatalogo-backend/models"
+	"strconv"
 
 	"github.com/gofiber/fiber/v2"
 )
@@ -48,6 +48,9 @@ func (apc *AdminProductosController) CrearProducto(c *fiber.Ctx) error {
 			Message: "El precio debe ser mayor que cero",
 		}))
 	}
+	if producto.Stock < 0 {
+		return c.Status(400).JSON(middleware.SanitizeError(models.APIError{Status: 400, Message: "El stock no puede ser negativo"}))
+	}
 
 	err := apc.repo.CrearProducto(&producto)
 	if err != nil {
@@ -80,6 +83,9 @@ func (apc *AdminProductosController) ActualizarProducto(c *fiber.Ctx) error {
 			Message: "Error al parsear la petición",
 			Details: err.Error(),
 		}))
+	}
+	if producto.Nombre == "" || producto.Precio <= 0 || producto.Stock < 0 {
+		return c.Status(400).JSON(middleware.SanitizeError(models.APIError{Status: 400, Message: "Nombre, precio mayor que cero y stock no negativo son requeridos"}))
 	}
 
 	err = apc.repo.ActualizarProducto(id, &producto)
@@ -124,7 +130,15 @@ func (apc *AdminProductosController) DesactivarProducto(c *fiber.Ctx) error {
 
 // ObtenerProductosAdmin maneja el endpoint GET /api/admin/productos (admin)
 func (apc *AdminProductosController) ObtenerProductosAdmin(c *fiber.Ctx) error {
-	productos, err := apc.repo.ObtenerProductosAdmin()
+	page := c.QueryInt("page", 1)
+	limit := c.QueryInt("limit", 10)
+	if page < 1 {
+		page = 1
+	}
+	if limit < 1 || limit > 100 {
+		limit = 10
+	}
+	productos, total, err := apc.repo.ObtenerProductosAdminPaginados(c.Query("q"), page, limit)
 	if err != nil {
 		return c.Status(500).JSON(middleware.SanitizeError(models.APIError{
 			Status:  500,
@@ -133,5 +147,5 @@ func (apc *AdminProductosController) ObtenerProductosAdmin(c *fiber.Ctx) error {
 		}))
 	}
 
-	return c.JSON(productos)
+	return c.JSON(fiber.Map{"data": productos, "page": page, "limit": limit, "total": total})
 }

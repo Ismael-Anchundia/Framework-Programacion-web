@@ -1,18 +1,23 @@
 // src/App.tsx
-import { type ReactNode } from 'react';
+import { type ReactNode, lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, Outlet } from 'react-router-dom';
 import Layout from './components/Layout';
-import Dashboard from './components/Dashboard';
-import Catalogo from './components/Catalogo';
 import Storefront from './components/Storefront';
+import Catalogo from './components/Catalogo';
 import DetalleProducto from './components/DetalleProducto';
-import MiRed from './components/MiRed';
 import Carrito from './components/Carrito';
 import Checkout from './components/Checkout';
 import Confirmacion from './components/Confirmacion';
 import Login from './components/Login';
+import ServiceWorkerUpdate from './components/ServiceWorkerUpdate';
+import { AdminProductos, AdminPedidos, MisPedidos, AdminLiquidaciones, AdminUsuarios } from './components/Backoffice';
 import { CartProvider } from './context/CartContext';
 import { AuthProvider, useAuth } from './context/AuthContext';
+
+// Lazy loading de componentes pesados
+const Dashboard = lazy(() => import('./components/Dashboard'));
+const MiRed = lazy(() => import('./components/MiRed'));
+const Registro = lazy(() => import('./components/Registro'));
 
 // Componente para proteger las rutas privadas: exige estar autenticado
 const ProtectedRoute = () => {
@@ -43,6 +48,12 @@ const AdminRoute = () => {
   return <Outlet />;
 };
 
+const RoleHome = () => {
+  const { user } = useAuth();
+  if (user?.rol !== 'admin') return <Navigate to="/tienda" replace />;
+  return <Suspense fallback={<div className="p-8 text-center">Cargando...</div>}><Dashboard /></Suspense>;
+};
+
 // Proveedor intermedio del carrito: al cambiar de usuario se remonta con key,
 // de modo que cada cuenta lea y persista SU propio carrito en localStorage.
 const CartBoundary = ({ children }: { children: ReactNode }) => {
@@ -62,15 +73,22 @@ function App() {
           <Routes>
             {/* Ruta pública */}
             <Route path="/login" element={<Login />} />
+            <Route path="/registro" element={<Suspense fallback={<div className="p-8 text-center">Cargando...</div>}><Registro /></Suspense>} />
 
             {/* Rutas protegidas (requieren login) */}
             <Route element={<ProtectedRoute />}>
               <Route path="/" element={<Layout />}>
-                {/* Solo administrador: Dashboard y Red multinivel */}
+                <Route index element={<RoleHome />} />
+                {/* Rutas administrativas */}
                 <Route element={<AdminRoute />}>
-                  <Route index element={<Dashboard />} />
-                  <Route path="mi-red" element={<MiRed />} />
+                  <Route path="admin/productos" element={<AdminProductos />} />
+                  <Route path="admin/pedidos" element={<AdminPedidos />} />
+                  <Route path="admin/usuarios" element={<AdminUsuarios />} />
+                  <Route path="admin/liquidaciones" element={<AdminLiquidaciones />} />
                 </Route>
+
+                <Route path="mi-red" element={<Suspense fallback={<div className="p-8 text-center">Cargando...</div>}><MiRed /></Suspense>} />
+                <Route path="mis-pedidos" element={<MisPedidos />} />
 
                 {/* Ambos roles: flujo de compra en línea */}
                 <Route path="tienda" element={<Storefront />} />
@@ -86,6 +104,7 @@ function App() {
             <Route path="*" element={<Navigate to="/" replace />} />
           </Routes>
         </BrowserRouter>
+        <ServiceWorkerUpdate />
       </CartBoundary>
     </AuthProvider>
   );
