@@ -23,16 +23,18 @@ func InitDB() error {
 		log.Println("Advertencia: No se pudo cargar archivo .env, usando variables de entorno del sistema")
 	}
 
-	// Obtenemos las variables de entorno o usamos valores por defecto
-	host := getEnv("DB_HOST", "localhost")
-	port := getEnv("DB_PORT", "5434")
-	user := getEnv("DB_USER", "multicatalogo")
-	password := getEnv("DB_PASSWORD", "multicatalogo123")
-	dbname := getEnv("DB_NAME", "multicatalogo")
-
-	// Construimos el DSN (Data Source Name)
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
+	// En Render se puede usar directamente la URL interna de PostgreSQL.
+	// Para desarrollo local seguimos aceptando las variables DB_*.
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		host := getEnv("DB_HOST", "localhost")
+		port := getEnv("DB_PORT", "5434")
+		user := getEnv("DB_USER", "multicatalogo")
+		password := getEnv("DB_PASSWORD", "multicatalogo123")
+		dbname := getEnv("DB_NAME", "multicatalogo")
+		dsn = fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+			host, port, user, password, dbname)
+	}
 
 	// Abrimos la conexión a la base de datos
 	var err error
