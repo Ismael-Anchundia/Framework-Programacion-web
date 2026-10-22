@@ -41,6 +41,8 @@ const Carrito = () => {
                   <img
                     src={item.img}
                     alt={item.nombre}
+                    loading="lazy"
+                    onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/product-placeholder.svg'; }}
                     className="w-16 h-16 object-cover rounded-md"
                   />
                   <div>

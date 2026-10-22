@@ -1,116 +1,39 @@
-// src/components/MiRed.tsx
-// Red multinivel visual (Tema 5):
-// - Resumen: referidos activos, ventas de la red, comisiones del mes y nivel alcanzado
-// - Árbol jerárquico recursivo de referidos con comisión calculada por nivel
-import { redInicial, contarRed, sumarVentasRed, sumarComisiones, nivelAlcanzado, comisionDeReferido, TASA_COMISION, type Referido } from '../data/red';
+import { useEffect, useMemo, useState } from 'react';
+import { api } from '../services/api';
+import { useAuth } from '../context/AuthContext';
 
-// Colores y etiquetas por nivel para el árbol
-const NIVEL_ESTILO: Record<number, { badge: string; border: string; tasa: string }> = {
-  1: { badge: "bg-indigo-100 text-indigo-700", border: "border-indigo-200", tasa: "10 %" },
-  2: { badge: "bg-purple-100 text-purple-700", border: "border-purple-200", tasa: "5 %" },
-  3: { badge: "bg-pink-100 text-pink-700", border: "border-pink-200", tasa: "2 %" },
-};
+type Nodo = { id:number; nombre:string; nivel:number; ventas:number; codigo?:string; hijos?:Nodo[] };
+type Comisiones = { comisiones:{id:number;pedido_id:number;nivel:number;monto:number;estado:string;creado_en?:string}[]; total_pendiente:number; total_pagada:number };
+type Liquidacion = {id:number;total:number;estado:string;creado_en?:string;pagada_en?:string};
+const count=(node:Nodo):number=>1+(node.hijos??[]).reduce((sum,child)=>sum+count(child),0);
+const sales=(node:Nodo):number=>Number(node.ventas||0);
 
-// Componente recursivo: renderiza un referido y, debajo, a sus hijos
-// Nota: la prop se llama "nodo" porque "ref" es una prop reservada en React 19
-const NodoReferido = ({ nodo }: { nodo: Referido }) => {
-  const estilo = NIVEL_ESTILO[nodo.nivel] ?? NIVEL_ESTILO[1];
-  const comision = comisionDeReferido(nodo);
+function Tree({node}:{node:Nodo}) { return <li><article className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white p-4"><div><p className="font-semibold">{node.nombre}</p><p className="text-xs text-slate-500">Nivel {node.nivel} · código {node.codigo||'—'}</p></div><p className="text-sm">Ventas: <strong>${Number(node.ventas).toFixed(2)}</strong></p></article>{Boolean(node.hijos?.length)&&<ul className="ml-5 mt-3 space-y-3 border-l-2 border-slate-200 pl-4">{node.hijos?.map(child=><Tree key={child.id} node={child}/>)}</ul>}</li>; }
 
-  return (
-    <li>
-      <div className={`bg-white rounded-lg border ${estilo.border} shadow-sm p-4 flex flex-wrap items-center justify-between gap-3`}>
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 rounded-full bg-slate-200 flex items-center justify-center font-bold text-slate-600">
-            {nodo.nombre.charAt(0)}
-          </div>
-          <div>
-            <p className="font-semibold text-slate-800">{nodo.nombre}</p>
-            <span className={`inline-block mt-1 text-xs font-semibold px-2 py-0.5 rounded-full ${estilo.badge}`}>
-              Nivel {nodo.nivel} · {estilo.tasa} comisión
-            </span>
-          </div>
-        </div>
-        <div className="text-right">
-          <p className="text-sm text-slate-500">Ventas</p>
-          <p className="font-bold text-slate-800">${nodo.ventas.toLocaleString()}</p>
-          <p className="text-xs text-indigo-600 font-semibold mt-1">
-            +${comision.toFixed(2)} para ti
-          </p>
-        </div>
-      </div>
-
-      {/* Hijos del referido (más profundidad en el árbol) */}
-      {nodo.hijos && nodo.hijos.length > 0 && (
-        <ul className="mt-3 ml-6 space-y-3 border-l-2 border-slate-200 pl-4">
-          {nodo.hijos.map((hijo) => (
-            <NodoReferido key={hijo.id} nodo={hijo} />
-          ))}
-        </ul>
-      )}
-    </li>
-  );
-};
-
-const MiRed = () => {
-  // KPIs derivados de los datos de la red (funciones puras en data/red.ts)
-  const referidosActivos = contarRed(redInicial);
-  const ventasRed = sumarVentasRed(redInicial);
-  const comisionesMes = sumarComisiones(redInicial);
-  const nivel = nivelAlcanzado(redInicial.hijos?.length ?? 0);
-
-  const resumen = [
-    { etiqueta: "Referidos Activos", valor: referidosActivos.toString(), color: "text-indigo-600" },
-    { etiqueta: "Ventas de la Red", valor: `$${ventasRed.toLocaleString()}`, color: "text-indigo-600" },
-    { etiqueta: "Comisiones del Mes", valor: `$${comisionesMes.toFixed(2)}`, color: "text-green-600" },
-    { etiqueta: "Nivel Alcanzado", valor: nivel, color: "text-amber-600" },
-  ];
-
-  return (
-    <div>
-      <h1 className="text-2xl font-bold text-slate-800 mb-2">Mi Red de Referidos</h1>
-      <p className="text-slate-500 mb-6">
-        Estructura multinivel: gana el {TASA_COMISION[1] * 100} % de nivel 1, {TASA_COMISION[2] * 100} % de nivel 2 y {TASA_COMISION[3] * 100} % de nivel 3.
-      </p>
-
-      {/* ===== TARJETAS DE RESUMEN ===== */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
-        {resumen.map((item) => (
-          <div key={item.etiqueta} className="bg-white p-6 rounded-lg shadow-sm border border-slate-100">
-            <p className="text-sm text-slate-500 uppercase font-semibold">{item.etiqueta}</p>
-            <p className={`text-3xl font-bold mt-2 ${item.color}`}>{item.valor}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* ===== ÁRBOL DE REFERIDOS ===== */}
-      <div className="bg-white rounded-lg border border-slate-200 shadow-sm p-6">
-        <h2 className="text-lg font-bold text-slate-800 mb-4">Jerarquía de tu Red</h2>
-
-        {/* Raíz: el usuario */}
-        <div className="bg-slate-900 text-white rounded-lg p-4 mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-full bg-indigo-500 flex items-center justify-center font-bold">
-              {redInicial.nombre.charAt(0)}
-            </div>
-            <div>
-              <p className="font-semibold">{redInicial.nombre}</p>
-              <p className="text-xs text-slate-300">Nivel alcanzado: {nivel}</p>
-            </div>
-          </div>
-          <p className="font-bold text-green-400">
-            Comisiones del mes: ${comisionesMes.toFixed(2)}
-          </p>
-        </div>
-
-        <ul className="space-y-3">
-          {redInicial.hijos?.map((hijo) => (
-            <NodoReferido key={hijo.id} nodo={hijo} />
-          ))}
-        </ul>
-      </div>
-    </div>
-  );
-};
-
-export default MiRed;
+export default function MiRed() {
+  const {user}=useAuth();
+  const [red,setRed]=useState<Nodo|null>(null);
+  const [ledger,setLedger]=useState<Comisiones|null>(null);
+  const [liquidaciones,setLiquidaciones]=useState<Liquidacion[]>([]);
+  const [error,setError]=useState(''); const [copied,setCopied]=useState(false);
+  useEffect(()=>{
+    const treePath = user?.rol === 'admin' ? '/api/red' : '/api/red/mia';
+    Promise.all([
+      api<Nodo>(treePath),
+      user?.rol === 'admin' ? Promise.resolve<Comisiones>({comisiones:[],total_pendiente:0,total_pagada:0}) : api<Comisiones>('/api/comisiones/mias'),
+      user?.rol === 'admin' ? Promise.resolve<Liquidacion[]>([]) : api<Liquidacion[]>('/api/liquidaciones/mias'),
+    ])
+      .then(([tree,commissions,payments])=>{setRed(tree);setLedger({...commissions,comisiones:commissions.comisiones??[]});setLiquidaciones(payments??[]);})
+      .catch(e=>setError(e.message));
+  },[user?.rol]);
+  const invite=useMemo(()=>red?.codigo?`${window.location.origin}/registro?ref=${encodeURIComponent(red.codigo)}`:'',[red]);
+  const copy=async()=>{if(!invite)return;try{await navigator.clipboard.writeText(invite);setCopied(true);setTimeout(()=>setCopied(false),1800);}catch{setError('No se pudo copiar el enlace.');}};
+  return <main className="space-y-6"><header className="flex flex-wrap items-end justify-between gap-3"><div><h1 className="text-2xl font-bold text-slate-900">Mi red</h1><p className="mt-1 text-sm text-slate-500">Tu árbol de referidos y el estado de tus comisiones.</p></div>{invite&&<button onClick={()=>void copy()} className="rounded-lg bg-indigo-600 px-4 py-2 text-sm font-semibold text-white">{copied?'Enlace copiado':'Copiar enlace de invitación'}</button>}</header>
+    {error&&<p role="alert" className="rounded-lg bg-amber-50 p-3 text-sm text-amber-800">{error}</p>}
+    {invite&&<div className="break-all rounded-lg border border-indigo-100 bg-indigo-50 p-3 text-sm text-indigo-800">{invite}</div>}
+    <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[['Miembros',red?String(Math.max(0,count(red)-1)):'—'],['Ventas de la red',red?`$${sales(red).toFixed(2)}`:'—'],['Comisiones pendientes',ledger?`$${Number(ledger.total_pendiente).toFixed(2)}`:'—'],['Comisiones pagadas',ledger?`$${Number(ledger.total_pagada).toFixed(2)}`:'—']].map(([label,value])=><article key={label} className="rounded-xl border border-slate-200 bg-white p-5"><p className="text-sm font-semibold uppercase text-slate-500">{label}</p><p className="mt-2 text-2xl font-bold text-indigo-700">{value}</p></article>)}</div>
+    <section className="rounded-xl border border-slate-200 bg-slate-50 p-5"><h2 className="mb-4 font-bold">Jerarquía de referidos</h2>{red?.hijos?.length?<ul className="space-y-3">{red.hijos.map(node=><Tree key={node.id} node={node}/>)}</ul>:<p className="text-sm text-slate-500">Tu red todavía no tiene miembros. Comparte el enlace para invitar a alguien.</p>}<p className="mt-4 text-xs text-slate-500">Cuenta: {user?.email}</p></section>
+    <section className="overflow-x-auto rounded-xl border border-slate-200 bg-white p-5"><h2 className="mb-4 font-bold">Mis comisiones</h2><table className="w-full min-w-[550px] text-left text-sm"><thead><tr className="text-slate-500"><th className="p-2">Pedido</th><th className="p-2">Nivel</th><th className="p-2">Fecha</th><th className="p-2">Estado</th><th className="p-2">Monto</th></tr></thead><tbody>{ledger?.comisiones.map(row=><tr key={row.id} className="border-t"><td className="p-2">#{row.pedido_id}</td><td className="p-2">{row.nivel}</td><td className="p-2">{row.creado_en??'—'}</td><td className="p-2 capitalize">{row.estado}</td><td className="p-2">${Number(row.monto).toFixed(2)}</td></tr>)}</tbody></table>{!ledger?.comisiones.length&&<p className="py-4 text-sm text-slate-500">Todavía no tienes comisiones registradas.</p>}</section>
+    {user?.rol !== 'admin' && <section className="space-y-3"><h2 className="font-bold">Mis liquidaciones</h2>{liquidaciones.map(row=><article key={row.id} className="flex flex-wrap justify-between gap-2 rounded-lg border border-slate-200 bg-white p-4 text-sm"><span>Liquidación #{row.id} · {row.creado_en??'—'}</span><span className="capitalize">{row.estado} · ${Number(row.total).toFixed(2)}</span></article>)}{liquidaciones.length===0&&<p className="text-sm text-slate-500">Aún no tienes pagos registrados.</p>}</section>}
+  </main>;
+}

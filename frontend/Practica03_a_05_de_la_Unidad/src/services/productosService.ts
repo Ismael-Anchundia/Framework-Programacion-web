@@ -1,21 +1,14 @@
-// src/services/productosService.ts
-// Capa de servicios del catálogo.
-// Actualmente devuelve datos de ejemplo (mock) simulando una llamada asíncrona.
-// En la Unidad 2, estas funciones se reemplazarán por fetch a GET /api/productos
-// sin necesidad de modificar los componentes que las consumen.
+import { api } from './api';
+import type { Producto } from '../data/productos';
 
-import { productosMock, type Producto } from "../data/productos";
+export type Pagina<T> = { data: T[]; page: number; limit: number; total: number };
 
-// Simula GET /api/productos (lista completa)
-export const getProductos = (): Promise<Producto[]> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(productosMock), 400);
-  });
+export const getProductos = (busqueda = '', page = 1, limit = 12, categoria = ''): Promise<Pagina<Producto>> => {
+  const params = new URLSearchParams({ page: String(page), limit: String(limit) });
+  if (busqueda.trim()) params.set('q', busqueda.trim());
+  if (categoria && categoria !== 'Todas') params.set('categoria', categoria);
+  return api<Pagina<Producto>>(`/api/productos?${params.toString()}`, {}, { auth: false });
 };
 
-// Simula GET /api/productos/:id (detalle de un producto)
-export const getProductoById = (id: number): Promise<Producto | undefined> => {
-  return new Promise((resolve) => {
-    setTimeout(() => resolve(productosMock.find((p) => p.id === id)), 300);
-  });
-};
+export const getProductoById = (id: number): Promise<Producto | undefined> =>
+  api<Producto>(`/api/productos/${id}`, {}, { auth: false });

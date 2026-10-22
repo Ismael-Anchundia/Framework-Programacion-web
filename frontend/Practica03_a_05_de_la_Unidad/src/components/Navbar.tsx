@@ -67,6 +67,7 @@ const Navbar = ({ toggleSidebar }: NavbarProps) => {
                 src="https://fastly.picsum.photos/id/64/4326/2884.jpg?hmac=9_SzX666YRpR_fOyYStXpfSiJ_edO3ghlSRnH2w09Kg"
                 alt="Avatar del usuario"
                 className="w-full h-full object-cover"
+                onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/avatar-placeholder.svg'; }}
               />
             </div>
 

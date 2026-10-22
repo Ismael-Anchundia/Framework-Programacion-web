@@ -2,37 +2,107 @@
 package main
 
 import (
+	"log"
+	"os"
+	"os/signal"
+	"strconv"
+	"strings"
+	"syscall"
+
 	// Importamos el framework principal Fiber.
 	"github.com/gofiber/fiber/v2"
 	// Importamos el middleware CORS para gestionar la seguridad entre distintos puertos/dominios.
 	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/recover"
 	// Importamos nuestro propio paquete de rutas para delegarle la configuración de los endpoints.
 	"multicatalogo-backend/routes"
+	// Importamos nuestro paquete config para la conexión a la base de datos
+	"multicatalogo-backend/config"
+	// Importamos nuestro paquete cache para Redis
+	"multicatalogo-backend/cache"
+	// Importamos nuestro paquete repository para inicializar el acceso a datos
+	"multicatalogo-backend/repository"
+	// Importamos nuestros controladores con inyección de dependencias
+	"multicatalogo-backend/controllers"
 )
 
 // func main es el punto de entrada de la aplicación en Go. Todo comienza a ejecutarse aquí.
 func main() {
+	// Inicializamos la conexión a la base de datos
+	if err := config.InitDB(); err != nil {
+		log.Fatalf("Error al inicializar la base de datos: %v", err)
+	}
+	defer config.CloseDB()
+
+	// Inicializamos la conexión a Redis
+	if err := config.InitRedis(); err != nil {
+		log.Printf("Advertencia: Error al inicializar Redis: %v (continuando sin caché)", err)
+	}
+	defer config.CloseRedis()
+
+	// Inicializamos el repository con inyección de dependencias
+	dbRepo := repository.NewPostgresRepository()
+	redisCache := cache.NewRedisCache()
+
+	// Inicializamos los controladores con sus dependencias inyectadas
+	authController := controllers.NewAuthController(dbRepo)
+	prodController := controllers.NewProdController(dbRepo)
+	redController := controllers.NewRedController(dbRepo)
+	checkoutController := controllers.NewCheckoutController(dbRepo, redisCache)
+	registerController := controllers.NewRegisterController(dbRepo)
+	adminProductosController := controllers.NewAdminProductosController(dbRepo)
+	pedidosController := controllers.NewPedidosController(dbRepo)
+	comisionesController := controllers.NewComisionesController(dbRepo)
+	liquidacionesController := controllers.NewLiquidacionesController(dbRepo)
+	reportesController := controllers.NewReportesController(dbRepo)
+	usuariosController := controllers.NewUsuariosController(dbRepo)
+
 	// Instanciamos una nueva aplicación de Fiber y la guardamos en la variable 'app'.
 	app := fiber.New()
+	// Evita que un panic en el procesamiento de una petición termine todo el proceso.
+	app.Use(recover.New())
 
 	// Implementamos el middleware CORS a nivel global usando app.Use() para interceptar todas las peticiones entrantes.
+	corsOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if corsOrigins == "" {
+		corsOrigins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+	}
 	app.Use(cors.New(cors.Config{
-		// Configuramos el CORS para permitir únicamente peticiones provenientes del frontend local en el puerto 5173.
-		AllowOrigins: "http://localhost:5173",
+		// En producción se define una lista separada por comas; localmente se permiten Vite y Preview.
+		AllowOrigins: corsOrigins,
 		// Declaramos de forma explícita qué cabeceras (Headers) se permitirán en la comunicación.
-		AllowHeaders: "Origin, Content-Type, Accept",
+		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
 
-	// Llamamos a la función SetupRoutes de nuestro paquete 'routes', enviándole la instancia de nuestra 'app'.
-	routes.SetupRoutes(app)
+	// Llamamos a la función SetupRoutes de nuestro paquete 'routes', enviándole la instancia de nuestra 'app' y los controladores.
+	routes.SetupRoutes(app, authController, prodController, redController, checkoutController, registerController, adminProductosController, pedidosController, comisionesController, liquidacionesController, reportesController, usuariosController)
+
+	// Configuramos graceful shutdown
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+
+	go func() {
+		<-c
+		log.Println("Cerrando servidor...")
+		config.CloseDB()
+		config.CloseRedis()
+		app.Shutdown()
+	}()
 
 	// Ponemos a la aplicación a escuchar peticiones en el puerto 3000 de la máquina local. (Bloquea el hilo de ejecución).
-	app.Listen(":3000")
+	// Render asigna el puerto mediante PORT; localmente mantenemos 3000 como valor predeterminado.
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "3000"
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		log.Fatalf("Puerto inválido en PORT: %q", port)
+	}
+	log.Printf("Servidor iniciado en el puerto %s", port)
+	if err := app.Listen(":" + port); err != nil {
+		log.Fatalf("Error al iniciar el servidor: %v", err)
+	}
 }
-
-
-
-
 
 // // main.go
 // package main

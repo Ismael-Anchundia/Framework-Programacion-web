@@ -11,6 +11,8 @@ export interface Producto {
   categoria: string;
   img: string;        // Imagen principal (portada)
   galeria: string[];  // Imágenes adicionales para la galería/lightbox
+  stock?: number;
+  activo?: boolean;
 }
 
 // Lista de categorías derivada de los productos (se usa para los filtros)
