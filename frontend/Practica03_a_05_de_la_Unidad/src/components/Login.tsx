@@ -2,6 +2,8 @@
 import { useState, type FormEvent } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { useAuth, type Rol } from "../context/AuthContext";
+import { api } from "../services/api";
+import { useOnlineStatus } from "../hooks/useOnlineStatus";
 
 const Login = () => {
   const [email, setEmail] = useState<string>("");
@@ -12,36 +14,29 @@ const Login = () => {
   const navigate = useNavigate();
   const location = useLocation();
   const { login } = useAuth();
+  const online = useOnlineStatus();
 
-  const handleSubmit = (e: FormEvent<HTMLFormElement>) => {
+  const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!online) {
+      setError("Necesitas conexión a internet para iniciar sesión.");
+      return;
+    }
     setLoading(true);
-
-    // Consumo de API RESTful usando promesas (Tema 4)
-    fetch("http://localhost:3000/api/login", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email, password }),
-    })
-      .then((response) => {
-        if (!response.ok) throw new Error("Credenciales incorrectas");
-        return response.json();
-      })
-      .then((data) => {
-        setError("");
-        // La API devuelve el rol (admin | cliente) junto al correo (Tema 5)
-        const rol: Rol = data.rol === "admin" ? "admin" : "cliente";
-        login({ email: data.email, rol, referido_id: data.referido_id }, data.token);
-
-        // Redirigimos según el rol: admin al Dashboard, cliente a la Tienda
-        navigate(rol === "admin" ? "/" : "/tienda");
-      })
-      .catch((err) => {
-        setError(err.message);
-      })
-      .finally(() => {
-        setLoading(false);
-      });
+    setError("");
+    try {
+      const data = await api<{ email: string; rol: string; referido_id?: number; token: string }>("/api/login", {
+        method: "POST",
+        body: JSON.stringify({ email, password }),
+      }, { auth: false });
+      const rol: Rol = data.rol === "admin" ? "admin" : "cliente";
+      login({ email: data.email, rol, referido_id: data.referido_id }, data.token);
+      navigate(rol === "admin" ? "/" : "/tienda");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "No se pudo iniciar sesión.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -93,10 +88,10 @@ const Login = () => {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || !online}
             className="w-full bg-indigo-600 text-white font-bold py-3 rounded-lg hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {loading ? "Validando..." : "Iniciar Sesión"}
+            {loading ? "Validando..." : online ? "Iniciar Sesión" : "Conéctate para iniciar sesión"}
           </button>
         </form>
 

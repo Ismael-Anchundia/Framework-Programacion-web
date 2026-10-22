@@ -9,83 +9,73 @@ export default defineConfig({
     react(),
     tailwindcss(),
     VitePWA({
-      registerType: 'autoUpdate',
+      registerType: 'prompt',
+      injectRegister: false,
       includeAssets: ['favicon.svg', 'apple-touch-icon.png'],
       manifest: {
         name: 'MultiCatálogo - Tienda Cosmética MLM',
-        short_name: 'MultiCatálogo',
+        short_name: 'MultiCat',
         description: 'Tienda cosmética con red de ventas multinivel',
+        lang: 'es-EC',
         theme_color: '#4f46e5',
         background_color: '#ffffff',
         display: 'standalone',
-        orientation: 'portrait',
         scope: '/',
         start_url: '/',
         icons: [
           {
-            src: '/pwa-72x72.svg',
-            sizes: '72x72',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-96x96.svg',
-            sizes: '96x96',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-128x128.svg',
-            sizes: '128x128',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-144x144.svg',
-            sizes: '144x144',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-152x152.svg',
-            sizes: '152x152',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-192x192.svg',
+            src: '/pwa-192x192.png',
             sizes: '192x192',
-            type: 'image/svg+xml',
+            type: 'image/png',
+            purpose: 'any',
           },
           {
-            src: '/pwa-384x384.svg',
-            sizes: '384x384',
-            type: 'image/svg+xml',
-          },
-          {
-            src: '/pwa-512x512.svg',
+            src: '/pwa-512x512.png',
             sizes: '512x512',
-            type: 'image/svg+xml',
+            type: 'image/png',
+            purpose: 'any',
+          },
+          {
+            src: '/pwa-512x512-maskable.png',
+            sizes: '512x512',
+            type: 'image/png',
+            purpose: 'maskable',
           },
         ],
       },
       workbox: {
-        globPatterns: ['**/*.{js,css,html,ico,png,svg}'],
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webmanifest,woff,woff2,ttf,eot}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            urlPattern: /\.(?:png|jpg|jpeg|svg|gif|webp)$/i,
+            urlPattern: ({ request, url }) => request.method === 'GET'
+              && request.destination === 'image'
+              && (/\.(?:png|jpg|jpeg|svg|gif|webp|avif)$/i.test(url.pathname)
+                || url.hostname === 'picsum.photos'
+                || url.hostname.endsWith('.picsum.photos')),
             handler: 'CacheFirst',
             options: {
               cacheName: 'image-cache',
+              cacheableResponse: { statuses: [0, 200] },
               expiration: {
                 maxEntries: 60,
-                maxAgeSeconds: 86400, // 24 horas
+                maxAgeSeconds: 2592000, // 30 días
               },
             },
           },
           {
-            urlPattern: /\.(?:js|css)$/i,
-            handler: 'CacheFirst',
+            urlPattern: ({ request, url }) => request.method === 'GET'
+              && !request.headers.has('Authorization')
+              && /^\/api\/productos(?:\/\d+)?$/.test(url.pathname),
+            handler: 'NetworkFirst',
             options: {
-              cacheName: 'static-cache',
+              cacheName: 'public-product-catalog',
+              networkTimeoutSeconds: 3,
+              cacheableResponse: { statuses: [200] },
               expiration: {
                 maxEntries: 50,
-                maxAgeSeconds: 86400, // 24 horas
+                maxAgeSeconds: 86400,
               },
             },
           },

@@ -7,8 +7,8 @@ export const getProductos = (busqueda = '', page = 1, limit = 12, categoria = ''
   const params = new URLSearchParams({ page: String(page), limit: String(limit) });
   if (busqueda.trim()) params.set('q', busqueda.trim());
   if (categoria && categoria !== 'Todas') params.set('categoria', categoria);
-  return api<Pagina<Producto>>(`/api/productos?${params.toString()}`);
+  return api<Pagina<Producto>>(`/api/productos?${params.toString()}`, {}, { auth: false });
 };
 
 export const getProductoById = (id: number): Promise<Producto | undefined> =>
-  api<Producto>(`/api/productos/${id}`).catch(() => undefined);
+  api<Producto>(`/api/productos/${id}`, {}, { auth: false });

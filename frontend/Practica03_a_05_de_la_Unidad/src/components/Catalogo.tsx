@@ -120,6 +120,8 @@ const Catalogo = () => {
                 <img
                   src={prod.img}
                   alt={prod.nombre}
+                  loading="lazy"
+                  onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/product-placeholder.svg'; }}
                   className="w-full h-40 object-cover hover:opacity-90 transition"
                 />
               </Link>

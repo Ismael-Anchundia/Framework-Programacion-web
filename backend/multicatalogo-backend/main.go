@@ -5,6 +5,8 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 
 	// Importamos el framework principal Fiber.
@@ -61,9 +63,13 @@ func main() {
 	app.Use(recover.New())
 
 	// Implementamos el middleware CORS a nivel global usando app.Use() para interceptar todas las peticiones entrantes.
+	corsOrigins := strings.TrimSpace(os.Getenv("CORS_ALLOWED_ORIGINS"))
+	if corsOrigins == "" {
+		corsOrigins = "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173,http://127.0.0.1:4173"
+	}
 	app.Use(cors.New(cors.Config{
-		// Configuramos el CORS para permitir únicamente peticiones provenientes del frontend local en el puerto 5173.
-		AllowOrigins: "http://localhost:5173",
+		// En producción se define una lista separada por comas; localmente se permiten Vite y Preview.
+		AllowOrigins: corsOrigins,
 		// Declaramos de forma explícita qué cabeceras (Headers) se permitirán en la comunicación.
 		AllowHeaders: "Origin, Content-Type, Accept, Authorization",
 	}))
@@ -84,8 +90,16 @@ func main() {
 	}()
 
 	// Ponemos a la aplicación a escuchar peticiones en el puerto 3000 de la máquina local. (Bloquea el hilo de ejecución).
-	log.Println("Servidor iniciado en http://localhost:3000")
-	if err := app.Listen(":3000"); err != nil {
+	// Render asigna el puerto mediante PORT; localmente mantenemos 3000 como valor predeterminado.
+	port := strings.TrimSpace(os.Getenv("PORT"))
+	if port == "" {
+		port = "3000"
+	}
+	if _, err := strconv.Atoi(port); err != nil {
+		log.Fatalf("Puerto inválido en PORT: %q", port)
+	}
+	log.Printf("Servidor iniciado en el puerto %s", port)
+	if err := app.Listen(":" + port); err != nil {
 		log.Fatalf("Error al iniciar el servidor: %v", err)
 	}
 }

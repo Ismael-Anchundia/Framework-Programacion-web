@@ -15,6 +15,7 @@ const DetalleProducto = () => {
   const { addToCart } = useCart();
 
   const [producto, setProducto] = useState<Producto | null>(null);
+  const [error, setError] = useState('');
   const [loading, setLoading] = useState<boolean>(true);
   const [imagenActiva, setImagenActiva] = useState<number>(0);
   const [lightboxAbierto, setLightboxAbierto] = useState<boolean>(false);
@@ -30,8 +31,11 @@ const DetalleProducto = () => {
         setProducto(data ?? null);
         setLoading(false);
       })
-      .catch(() => {
-        if (activo) setLoading(false);
+      .catch((err: unknown) => {
+        if (activo) {
+          setError(err instanceof Error ? err.message : 'No se pudo cargar el producto. Comprueba tu conexión.');
+          setLoading(false);
+        }
       });
     return () => {
       activo = false;
@@ -55,7 +59,8 @@ const DetalleProducto = () => {
   if (!producto) {
     return (
       <div className="bg-white p-10 rounded-lg border border-slate-200 text-center">
-        <p className="text-slate-600 text-lg mb-4">Producto no encontrado.</p>
+        <p className="text-slate-600 text-lg mb-4">{error || 'Producto no encontrado.'}</p>
+        {error && <button type="button" onClick={() => window.location.reload()} className="mr-4 text-indigo-600 font-semibold hover:underline">Reintentar</button>}
         <Link to="/catalogo" className="text-indigo-600 font-semibold hover:underline">
           ← Volver al catálogo
         </Link>
@@ -92,6 +97,7 @@ const DetalleProducto = () => {
           <img
             src={imagenes[imagenActiva]}
             alt={producto.nombre}
+            onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/product-placeholder.svg'; }}
             onClick={() => setLightboxAbierto(true)}
             className="w-full h-80 md:h-96 object-cover rounded-xl border border-slate-200 cursor-zoom-in"
           />
@@ -105,7 +111,7 @@ const DetalleProducto = () => {
                     : "border-transparent opacity-70 hover:opacity-100"
                   }`}
               >
-                <img src={img} alt={`Vista ${idx + 1}`} className="w-20 h-16 object-cover" />
+                <img src={img} alt={`Vista ${idx + 1}`} loading="lazy" onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/product-placeholder.svg'; }} className="w-20 h-16 object-cover" />
               </button>
             ))}
           </div>
@@ -162,6 +168,7 @@ const DetalleProducto = () => {
           <img
             src={imagenes[imagenActiva]}
             alt={producto.nombre}
+            onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/product-placeholder.svg'; }}
             onClick={(e) => e.stopPropagation()}
             className="max-h-[85vh] max-w-[85vw] object-contain rounded-lg"
           />

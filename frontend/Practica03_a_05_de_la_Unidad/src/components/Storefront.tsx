@@ -112,6 +112,8 @@ const Storefront = () => {
                   <img
                     src={prod.img}
                     alt={prod.nombre}
+                    loading="lazy"
+                    onError={(event) => { event.currentTarget.onerror = null; event.currentTarget.src = '/product-placeholder.svg'; }}
                     className="w-full h-48 object-cover group-hover:scale-105 transition-transform"
                   />
                   <div className="p-4">

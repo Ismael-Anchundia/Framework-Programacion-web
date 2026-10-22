@@ -1,6 +1,7 @@
 import { useState, type FormEvent } from 'react';
 import { Link, useNavigate, useSearchParams } from 'react-router-dom';
 import { api } from '../services/api';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 export default function Registro() {
   const [params] = useSearchParams();
@@ -11,13 +12,18 @@ export default function Registro() {
   const [ref, setRef] = useState(params.get('ref') ?? '');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const online = useOnlineStatus();
 
   const submit = async (event: FormEvent) => {
     event.preventDefault();
+    if (!online) {
+      setError('Necesitas conexión a internet para crear una cuenta.');
+      return;
+    }
     setLoading(true);
     setError('');
     try {
-      await api('/api/register', { method: 'POST', body: JSON.stringify({ nombre, email, password, ref: ref.trim() }) });
+      await api('/api/register', { method: 'POST', body: JSON.stringify({ nombre, email, password, ref: ref.trim() }) }, { auth: false });
       navigate('/login', { state: { message: 'Cuenta creada. Inicia sesión para continuar.' } });
     } catch (err) {
       setError(err instanceof Error ? err.message : 'No se pudo crear la cuenta.');
@@ -32,7 +38,7 @@ export default function Registro() {
       <label className="block text-sm font-medium">Correo electrónico<input required type="email" value={email} onChange={e => setEmail(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
       <label className="block text-sm font-medium">Contraseña<input required minLength={8} type="password" value={password} onChange={e => setPassword(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
       <label className="block text-sm font-medium">Código de referido (opcional)<input value={ref} onChange={e => setRef(e.target.value)} className="mt-1 w-full rounded-lg border border-slate-300 px-3 py-2" /></label>
-      <button disabled={loading} className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{loading ? 'Creando cuenta…' : 'Crear cuenta'}</button>
+      <button disabled={loading || !online} className="w-full rounded-lg bg-indigo-600 py-3 font-semibold text-white hover:bg-indigo-700 disabled:opacity-50">{loading ? 'Creando cuenta…' : online ? 'Crear cuenta' : 'Conéctate para crear cuenta'}</button>
       <p className="text-center text-sm text-slate-600">¿Ya tienes cuenta? <Link to="/login" className="font-semibold text-indigo-600">Inicia sesión</Link></p>
     </form>
   </main>;

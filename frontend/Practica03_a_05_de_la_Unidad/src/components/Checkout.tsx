@@ -8,6 +8,7 @@ import { Link, useNavigate } from 'react-router-dom';
 import { useCart } from '../context/CartContext';
 import { api } from '../services/api';
 import { useAuth } from '../context/AuthContext';
+import { useOnlineStatus } from '../hooks/useOnlineStatus';
 
 interface DatosEnvio {
   nombre: string;
@@ -25,6 +26,7 @@ const METODOS_PAGO = ["Tarjeta de crédito", "Transferencia bancaria", "Efectivo
 const Checkout = () => {
   const { cart, totalPrice, clearCart } = useCart();
   const { user } = useAuth();
+  const online = useOnlineStatus();
   const navigate = useNavigate();
 
   const [datos, setDatos] = useState<DatosEnvio>({
@@ -58,6 +60,10 @@ const Checkout = () => {
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!online) {
+      setError("Necesitas conexión a internet para confirmar el pedido. Tu carrito se conserva.");
+      return;
+    }
     setProcesando(true);
     setError("");
     try {
@@ -197,10 +203,10 @@ const Checkout = () => {
 
           <button
             type="submit"
-            disabled={procesando}
+            disabled={procesando || !online}
             className="w-full bg-indigo-600 text-white py-3 rounded-lg font-semibold hover:bg-indigo-700 transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            {procesando ? "Procesando pago..." : "Confirmar Pedido"}
+            {procesando ? "Procesando pedido..." : online ? "Confirmar Pedido" : "Conéctate para comprar"}
           </button>
         </form>
 

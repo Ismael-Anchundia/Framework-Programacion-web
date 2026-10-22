@@ -47,6 +47,15 @@ go build -o multicatalogo-backend.exe .
 
 El servidor iniciará en `http://localhost:3000`
 
+### CORS para despliegue
+
+Localmente, el backend permite los orígenes de Vite (`5173`) y Vite Preview (`4173`) en `localhost` y `127.0.0.1`. Para un frontend publicado en otro origen, define `CORS_ALLOWED_ORIGINS` con el origen HTTPS exacto; acepta varios separados por comas. Si frontend y backend comparten origen detrás de un proxy, el navegador no requiere CORS.
+
+```powershell
+$env:CORS_ALLOWED_ORIGINS = "https://tienda.ejemplo.edu"
+go run .
+```
+
 ## Endpoints Disponibles
 
 ### Autenticación
