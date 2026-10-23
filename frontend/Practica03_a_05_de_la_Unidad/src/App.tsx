@@ -10,6 +10,7 @@ import Checkout from './components/Checkout';
 import Confirmacion from './components/Confirmacion';
 import Login from './components/Login';
 import ServiceWorkerUpdate from './components/ServiceWorkerUpdate';
+import InstallPWAButton from './components/InstallPWAButton';
 import NetworkStatusBanner from './components/NetworkStatusBanner';
 import { AdminProductos, AdminPedidos, MisPedidos, AdminLiquidaciones, AdminUsuarios } from './components/Backoffice';
 import { CartProvider } from './context/CartContext';
@@ -71,6 +72,7 @@ function App() {
     <AuthProvider> {/* Proveedor de Autenticación */}
       <CartBoundary> {/* Proveedor del Carrito (uno por usuario) */}
         <NetworkStatusBanner />
+        <InstallPWAButton />
         <BrowserRouter>
           <Routes>
             {/* Ruta pública */}
