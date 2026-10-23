@@ -9,6 +9,8 @@ import { useCart } from '../context/CartContext';
 import { getProductos } from '../services/productosService';
 import { categorias, type Producto } from '../data/productos';
 
+const normalizarCategoria = (value: string) => value.trim().toLocaleLowerCase('es');
+
 const Catalogo = () => {
   const { addToCart } = useCart();
   const [productos, setProductos] = useState<Producto[]>([]);
@@ -40,11 +42,20 @@ const Catalogo = () => {
   // Filtrado con useMemo: solo se recalcula cuando cambian busqueda/categoria/productos
   const productosFiltrados = useMemo(() => {
     return productos.filter((prod) => {
-      const coincideCategoria = categoria === "Todas" || prod.categoria === categoria;
+      const coincideCategoria = categoria === "Todas"
+        || normalizarCategoria(prod.categoria) === normalizarCategoria(categoria);
       return coincideCategoria;
     });
   }, [productos, categoria]);
-  const categoriasDisponibles = useMemo(() => [...new Set([...categorias, ...productos.map(p => p.categoria).filter(Boolean)])].sort(), [productos]);
+  const categoriasDisponibles = useMemo(() => {
+    const unicas = new Map<string, string>();
+    [...categorias, ...productos.map((p) => p.categoria).filter(Boolean)].forEach((cat) => {
+      const etiqueta = cat.trim();
+      const clave = normalizarCategoria(etiqueta);
+      if (clave && !unicas.has(clave)) unicas.set(clave, etiqueta);
+    });
+    return [...unicas.values()].sort((a, b) => a.localeCompare(b, 'es'));
+  }, [productos]);
 
   const handleCategoriaChange = (value: string) => {
     setCategoria(value);

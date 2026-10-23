@@ -245,7 +245,7 @@ func (r *PostgresRepository) ObtenerProductosPaginados(busqueda, categoria strin
 		return data, total, nil
 	}
 	pattern := "%" + busqueda + "%"
-	where := "activo = true AND ($1 = '' OR nombre ILIKE $2 OR descripcion ILIKE $2 OR categoria ILIKE $2) AND ($3 = '' OR categoria = $3)"
+	where := "activo = true AND ($1 = '' OR nombre ILIKE $2 OR descripcion ILIKE $2 OR categoria ILIKE $2) AND ($3 = '' OR LOWER(BTRIM(categoria)) = LOWER(BTRIM($3)))"
 	var total int
 	if err := r.db.QueryRow("SELECT COUNT(*) FROM productos WHERE "+where, busqueda, pattern, categoria).Scan(&total); err != nil {
 		return nil, 0, err
